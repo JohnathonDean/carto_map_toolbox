@@ -131,6 +131,7 @@ bool NodeMain::HandleSaveMap(carto_map::SaveMap::Request& request,
                              carto_map::SaveMap::Response& response) {
   absl::MutexLock lock(&mutex_);
   map_manager_->SaveMap(request.filename);
+  map_manager_->SaveMapInfo(request.filename);
   return true;
 }
 

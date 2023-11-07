@@ -57,7 +57,8 @@ class PoseGraphMap {
 
   void LoadStateFromProto(io::ProtoStreamReaderInterface* const reader);
 
-  void LoadSubmapList(const boost::property_tree::ptree& map_data);
+  void LoadSubmapList(const Json::Value& map_data);
+  Json::Value GetSubmapListToJson();
 
   PoseGraphInterface::SubmapData GetSubmapData(const SubmapId& submap_id) const;
   MapById<SubmapId, PoseGraphInterface::SubmapData> GetAllSubmapData() const;
@@ -110,8 +111,12 @@ class PoseGraphMap {
       const SubmapId& submap_id) const;
 };
 
-void PoseGraphMap::LoadSubmapList(const boost::property_tree::ptree& map_data) {
+void PoseGraphMap::LoadSubmapList(const Json::Value& map_data) {
   overlap_computer_.LoadSubmapList(map_data);
+}
+
+Json::Value PoseGraphMap::GetSubmapListToJson() {
+  return overlap_computer_.GetSubmapListToJson();
 }
 
 void PoseGraphMap::LoadStateFromProto(

@@ -7,9 +7,16 @@ carto_map_toolbox是一个基于Cartographer的离线地图编辑工具，可以
 - 手动回环优化
 - 子图重叠率检测
 
+参考：
+https://github.com/sqrt81/carto_slam
+
 ## 安装编译
 系统环境：ubuntu20.04、ROS noetic
 > **注意:** 仓库内包含了原生的cartographer和cartographer_ros功能包，注意编译冲突
+
+安装absl
+安装glog
+
 
 在本地创建ROS工作空间，将仓库克隆到工作空间然后编译
 ```

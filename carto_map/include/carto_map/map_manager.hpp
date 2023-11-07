@@ -75,6 +75,7 @@ class MapManager {
 
   bool LoadMap(const std::string& file_name, bool show_disable);
   bool SaveMap(const std::string& file_path);
+  bool SaveMapInfo(const std::string& file_path);
 
   cartographer_ros_msgs::SubmapList GetSubmapList();
   visualization_msgs::MarkerArray GetTrajectoryNodeList();
@@ -126,68 +127,46 @@ bool MapManager::LoadMap(const std::string& file_name, bool show_disable) {
                            .count();
   LOG(INFO) << "LoadMap cost time:" << duration_time;
 
+  Json::Value map_data;
+  Json::Reader reader;
   std::string map_data_path = file_name + "/" + "meta.json";
-  boost::property_tree::ptree map_data;
-  try {
-    boost::property_tree::read_json(map_data_path, map_data);
-  } catch (boost::property_tree::ptree_error& e) {
-    LOG(ERROR) << "LoadMapData failed:" << e.what();
-  }
-
-  // 读取必需配置
-  auto resolution = map_data.get_optional<float>("resolution");
-  auto origin_x = map_data.get_optional<float>("origin_x");
-  auto origin_y = map_data.get_optional<float>("origin_y");
-  auto size_x = map_data.get_optional<uint32_t>("size_x");
-  auto size_y = map_data.get_optional<uint32_t>("size_y");
-  auto occupied_threshold = map_data.get_optional<float>("occupied_threshold");
-  auto empty_threshold = map_data.get_optional<float>("empty_threshold");
-  auto map_id = map_data.get_optional<std::string>("id");
-
-  map_info_.resolution = *resolution;
-  map_info_.origin_x = *origin_x;
-  map_info_.origin_y = *origin_y;
-  map_info_.col_size = *size_x;
-  map_info_.row_size = *size_y;
-  map_info_.occupied_threshold = *occupied_threshold;
-  map_info_.empty_threshold = *empty_threshold;
-  map_info_.map_id = *map_id;
-
-  auto map_hidden_submaps_in_meta_cfg =
-      map_data.get_child_optional("hidden_submaps");
-  if (map_hidden_submaps_in_meta_cfg) {
-    for (auto& [_, map_hidden_submaps_in_meta_cfg] :
-         *map_hidden_submaps_in_meta_cfg) {
-      auto trajectory_id =
-          map_hidden_submaps_in_meta_cfg.get_optional<int>("trajectory_id");
-      if (!trajectory_id) {
-        continue;
-      } else {
-        auto hidden_all_submaps_cfg =
-            map_hidden_submaps_in_meta_cfg.get_child_optional("hidden_all");
-        auto hidden_all_submaps =
-            map_hidden_submaps_in_meta_cfg.get_optional<int>("hidden_all");
-        if (hidden_all_submaps_cfg && hidden_all_submaps == 1) {
-          map_info_.hidden_trajectory_ids.push_back(int(*trajectory_id));
-        } else {
-          auto submap_index_in_meta_cfg =
-              map_hidden_submaps_in_meta_cfg.get_child_optional("submap_index");
-          if (!submap_index_in_meta_cfg) {
-            continue;
+  std::ifstream input_file(map_data_path, std::ios::binary);
+  if(input_file.is_open()) {
+    if(reader.parse(input_file, map_data)) {
+      map_info_.resolution         = map_data["resolution"].asFloat();
+      map_info_.origin_x           = map_data["origin_x"].asFloat();
+      map_info_.origin_y           = map_data["origin_y"].asFloat();
+      map_info_.col_size           = map_data["size_x"].asUInt();
+      map_info_.row_size           = map_data["size_y"].asUInt();
+      map_info_.occupied_threshold = map_data["occupied_threshold"].asFloat();
+      map_info_.empty_threshold    = map_data["empty_threshold"].asFloat();
+      map_info_.map_id             = map_data["map_id"].asString();
+      if(map_data.isMember("hidden_submaps")) {
+        for (const auto& it : map_data["hidden_submaps"]) {
+          int trajectory_id = it["trajectory_id"].asInt();
+          if(it["hidden_all"].asInt() == 1) {
+            map_info_.hidden_trajectory_ids.push_back(trajectory_id);
           } else {
-            for (auto& iter : *submap_index_in_meta_cfg) {
+            for (auto& iter : it["submap_index"]) {
               cartographer::mapping::SubmapId submap_id = {0, 0};
-              submap_id.submap_index = iter.second.get_value<int>();
-              submap_id.trajectory_id = *trajectory_id;
+              submap_id.submap_index = iter.asInt();
+              submap_id.trajectory_id = trajectory_id;
               map_info_.hidden_submap_ids.push_back(submap_id);
             }
           }
         }
       }
+      if(map_data.isMember("submap_list")) {
+        pose_graph_->LoadSubmapList(map_data);
+        LOG(INFO) << "Load submap list from meta.json";
+      }
+    } else {
+      LOG(ERROR) << "Failed to parse json data from file";
     }
+  } else {
+    LOG(ERROR) << "Failed to open file:" << map_data_path;
   }
-
-  pose_graph_->LoadSubmapList(map_data);
+  input_file.close();
 
   return true;
 }
@@ -207,6 +186,43 @@ bool MapManager::SaveMap(const std::string& file_path) {
   LOG(INFO) << "WriteMapProto cost time:" << duration_time;
 
   return (writer.Close());
+}
+
+bool MapManager::SaveMapInfo(const std::string& file_path) {
+  std::string file_name = file_path + "/meta.json";
+  std::ofstream out_file(file_name, std::ios::out | std::ios::binary);
+	Json::StyledWriter style_writer;
+  Json::Value map_info_data;
+  map_info_data["resolution"] = map_info_.resolution;
+  map_info_data["origin_x"] = map_info_.origin_x;
+  map_info_data["origin_y"] = map_info_.origin_y;
+  map_info_data["size_x"] = map_info_.col_size;
+  map_info_data["size_y"] = map_info_.row_size;
+  map_info_data["occupied_threshold"] = map_info_.occupied_threshold;
+  map_info_data["empty_threshold"] = map_info_.empty_threshold;
+  map_info_data["map_id"] = map_info_.map_id;
+
+  int num_trajectory = pose_graph_->num_trajectory();
+  for (int i = 0; i < num_trajectory; i++) {
+    map_info_data["hidden_submaps"][i]["trajectory_id"] = i;
+    if(std::find(map_info_.hidden_trajectory_ids.begin(), map_info_.hidden_trajectory_ids.end(), i) == map_info_.hidden_trajectory_ids.end()) {
+      map_info_data["hidden_submaps"][i]["hidden_all"] = 0;
+      for (auto& iter : map_info_.hidden_submap_ids) {
+        if(iter.trajectory_id == i) {
+          map_info_data["hidden_submaps"][i]["submap_index"].append(iter.submap_index);
+        }
+      }
+    } else {
+      map_info_data["hidden_submaps"][i]["hidden_all"] = 1;
+    }
+  }
+
+  map_info_data["submap_list"] = (pose_graph_->GetSubmapListToJson())["submap_list"];
+
+  out_file << style_writer.write(map_info_data);
+  out_file.close();
+
+  return true;
 }
 
 cartographer_ros_msgs::SubmapList MapManager::GetSubmapList() {

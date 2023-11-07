@@ -1,8 +1,6 @@
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
 #include <fstream>
-#include <opencv2/opencv.hpp>
 #include <thread>
+#include <opencv2/opencv.hpp>
 
 #include "json/json.h"
 #include "cartographer/common/port.h"
@@ -112,20 +110,18 @@ class OccupancyGrid2D {
     }
   }
 
-  OccupancyGrid2D(const boost::property_tree::ptree& submap_data) {
-    resolution_ = submap_data.get<double>("resolution");
-    max_x_      = submap_data.get<double>("max_x");
-    max_y_      = submap_data.get<double>("max_y");
-    num_y_      = submap_data.get<int>("num_y");
-    num_x_      = submap_data.get<int>("num_x");
-    auto global_pose_data = submap_data.get_child("global_pose");
-    double x     = global_pose_data.get<double>("x");
-    double y     = global_pose_data.get<double>("y");
-    double angle = global_pose_data.get<double>("angle");
+  OccupancyGrid2D(const Json::Value& submap_data) {
+    resolution_  = submap_data["resolution"].asDouble();
+    max_x_       = submap_data["max_x"].asDouble();
+    max_y_       = submap_data["max_y"].asDouble();
+    num_y_       = submap_data["num_y"].asInt();
+    num_x_       = submap_data["num_x"].asInt();
+    double x     = submap_data["global_pose"]["x"].asDouble();
+    double y     = submap_data["global_pose"]["y"].asDouble();
+    double angle = submap_data["global_pose"]["angle"].asDouble();
     global_pose_ = transform::Embed3D(transform::Rigid2d({x, y}, angle));
-    auto cell_index_cfg = submap_data.get_child("known_cell_index");
-    for (auto& cell_index : cell_index_cfg) {
-      known_cell_index_.push_back(cell_index.second.get_value<int>());
+    for (auto& cell_index : submap_data["known_cell_index"]) {
+      known_cell_index_.push_back(cell_index.asInt());
     }
   }
 
@@ -153,30 +149,20 @@ class OccupancyGrid2D {
     return Eigen::Array2i(index % num_x_, index / num_x_);
   }
 
-  boost::property_tree::ptree ToJsonValue() {
-    boost::property_tree::ptree submap_data;
-
-    submap_data.put("resolution", resolution_);
-    submap_data.put("max_x",      max_x_);
-    submap_data.put("max_y",      max_y_);
-    submap_data.put("num_x",      num_x_);
-    submap_data.put("num_y",      num_y_);
+  Json::Value ToJsonValue() {
+    Json::Value submap_data;
+    submap_data["resolution"] = resolution_;
+    submap_data["max_x"] = max_x_;
+    submap_data["max_y"] = max_y_;
+    submap_data["num_x"] = num_x_;
+    submap_data["num_y"] = num_y_;
     transform::Rigid2d global_pose_2d = transform::Project2D(global_pose_);
-    boost::property_tree::ptree global_pose_data;
-    double x = global_pose_2d.translation().x();
-    double y = global_pose_2d.translation().y();
-    double angle = global_pose_2d.rotation().angle();
-    global_pose_data.put("x", x);
-    global_pose_data.put("y", y);
-    global_pose_data.put("angle", angle);
-    submap_data.put_child("global_pose", global_pose_data);
-    boost::property_tree::ptree cell_index_data;
+    submap_data["global_pose"]["x"] = static_cast<double>(global_pose_2d.translation().x());
+    submap_data["global_pose"]["y"] = static_cast<double>(global_pose_2d.translation().y());
+    submap_data["global_pose"]["angle"] = static_cast<double>(global_pose_2d.rotation().angle());
     for (const auto& index : known_cell_index_) {
-      // cell_index_data.push_back(std::make_pair("", index));
-      cell_index_data.add("", index);
+      submap_data["known_cell_index"].append(index);
     }
-    submap_data.put_child("known_cell_index", cell_index_data);
-
     return submap_data;
   }
 
@@ -197,7 +183,7 @@ class OverlappingSubmapsCompute2D {
   }
   ~OverlappingSubmapsCompute2D() {}
 
-  void LoadSubmapList(const boost::property_tree::ptree& submap_data);
+  void LoadSubmapList(const Json::Value& submap_data);
 
   void UpdateSubmapList(
       const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data);
@@ -208,9 +194,11 @@ class OverlappingSubmapsCompute2D {
   void ComputeAllSubmapsOverlap(
       const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data);
 
-  boost::property_tree::ptree GetSubmapListToJson();
+  Json::Value GetSubmapListToJson();
 
  private:
+  absl::Mutex submaps_list_mutex_;
+
   double low_resolution_;
 
   std::map<SubmapId, std::shared_ptr<OccupancyGrid2D>> submaps_grid_;
@@ -218,8 +206,8 @@ class OverlappingSubmapsCompute2D {
 
 void OverlappingSubmapsCompute2D::UpdateSubmapList(
     const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data) {
+  absl::MutexLock lock(&submaps_list_mutex_);
   auto start_time = std::chrono::high_resolution_clock::now();
-
   for (const auto& submap : submap_data) {
     if (submaps_grid_.count(submap.id) == 0) {
       submaps_grid_[submap.id] =
@@ -246,26 +234,27 @@ void OverlappingSubmapsCompute2D::UpdateSubmapList(
   LOG(INFO) << "UpdateSubmapList total cost time:" << duration_time;
 }
 
-boost::property_tree::ptree OverlappingSubmapsCompute2D::GetSubmapListToJson() {
-  boost::property_tree::ptree submap_list;
+Json::Value OverlappingSubmapsCompute2D::GetSubmapListToJson() {
+  absl::MutexLock lock(&submaps_list_mutex_);
+  Json::Value submap_list;
   for (const auto& submap : submaps_grid_) {
-    boost::property_tree::ptree submap_data = submap.second->ToJsonValue();
-    submap_data.put("trajectory_id", submap.first.trajectory_id);
-    submap_data.put("submap_index", submap.first.submap_index);
-    submap_list.push_back(std::make_pair("", submap_data));
+    Json::Value submap_data = submap.second->ToJsonValue();
+    submap_data["trajectory_id"] = submap.first.trajectory_id;
+    submap_data["submap_index"] = submap.first.submap_index;
+    submap_list["submap_list"].append(submap_data);
   }
   return submap_list;
 }
 
-void OverlappingSubmapsCompute2D::LoadSubmapList(const boost::property_tree::ptree& submap_data) {
-  auto submap_list_cfg = submap_data.get_child_optional("submap_list");
-  if(!submap_list_cfg)
+void OverlappingSubmapsCompute2D::LoadSubmapList(const Json::Value& submap_data) {
+  if(!submap_data.isMember("submap_list"))
     return;
-  for (auto& submap : *submap_list_cfg) {
-    int trajectory_id_tem = *submap.second.get_optional<int>("trajectory_id");
-    int submap_index_tem = *submap.second.get_optional<int>("submap_index");
+  absl::MutexLock lock(&submaps_list_mutex_);
+  for (auto& submap : submap_data["submap_list"]) {
+    int trajectory_id_tem = submap["trajectory_id"].asInt();
+    int submap_index_tem  = submap["submap_index"].asInt();
     SubmapId submap_id{trajectory_id_tem, submap_index_tem};
-    submaps_grid_[submap_id] = std::make_shared<OccupancyGrid2D>(submap.second);
+    submaps_grid_[submap_id] = std::make_shared<OccupancyGrid2D>(submap);
   }
 }
 
@@ -323,17 +312,12 @@ void OverlappingSubmapsCompute2D::ComputeAllSubmapsOverlap(
   GlobalCoverageGrid2D coverage_grid(grid_offset, low_resolution_);
   std::set<SubmapId> all_submap_ids =
       GenerateGlobalCoverageGrid2D(&coverage_grid);
-  coverage_grid.SaveImage("/home/Pictures/coverage_grid.png");
+  // coverage_grid.SaveImage("/home/dean/Pictures/coverage_grid.png");
 
-  std::ofstream out_file("/home/dean/Pictures/submap_list111.json",
-                         std::ios::out | std::ios::binary);
-  boost::property_tree::json_parser::write_json(out_file, GetSubmapListToJson());
-
-
-  // std::string submaps_data = GetSubmapListToJson().dump();
-  // std::ofstream out_file("/home/dean/Pictures/submap_list.json",
+  // std::ofstream out_file("/home/dean/Pictures/submap_list111.json",
   //                        std::ios::out | std::ios::binary);
-  // out_file.write(submaps_data.data(), submaps_data.size());
+	// Json::StyledWriter style_writer;
+  // out_file << style_writer.write(GetSubmapListToJson());
   // out_file.close();
 
   int fresh_submaps_count = 4;
