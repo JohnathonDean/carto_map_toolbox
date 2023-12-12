@@ -728,7 +728,7 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id, const
   const Grid2D& input_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(input_submap_id).submap)->grid();
   const Grid2D& source_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(source_submap_id).submap)->grid();
 
-  submap_matcher_->MatchRT(input_grid, source_grid, pose_prediction, &pose_estimate);
+  submap_matcher_->MatchFullCSM(input_grid, source_grid, pose_prediction, &pose_estimate);
 
   LOG(INFO) << "global_frame_from_local_frame1" << global_frame_from_local_frame1;
   LOG(INFO) << "global_frame_from_local_frame2" << global_frame_from_local_frame2;
@@ -744,6 +744,8 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id, const
               << "; global_submap_pose_2d:"
               << global_submap_poses_2d_.at(input_submap_id);
   }
+
+  // submap_matcher_->SaveImageFromMatchGrid(input_grid, source_grid, pose_prediction, "/home/dean/Pictures/submap.png");
 
 }
 

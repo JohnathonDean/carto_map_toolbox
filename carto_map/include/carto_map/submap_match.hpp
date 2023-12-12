@@ -24,6 +24,11 @@ public:
                 const cartographer::transform::Rigid2d& predict_pose,
                 cartographer::transform::Rigid2d* pose_estimate);
 
+    void MatchFullCSM(const cartographer::mapping::Grid2D& input_grid,
+                    const cartographer::mapping::Grid2D& source_grid,
+                    const cartographer::transform::Rigid2d& predict_pose,
+                    cartographer::transform::Rigid2d* pose_estimate);
+
     cartographer::sensor::PointCloud GetPointcloudFromGrid(const cartographer::mapping::Grid2D& grid);
 
     void SaveImageFromGrid(const cartographer::mapping::Grid2D& grid, const std::string& file_name) {
@@ -42,13 +47,36 @@ public:
             if (!grid.IsKnown(index)) continue;
             // std::cout << grid.GetCorrespondenceCost(index) << "/" << grid.GetMaxCorrespondenceCost() << ";";
             if(1.f - grid.GetCorrespondenceCost(index) > 0.5) {
-                int x = static_cast<int>(250 + index.x());
-                int y = static_cast<int>(250 + index.y());
+                int x = static_cast<int>(500 + index.x());
+                int y = static_cast<int>(500 + index.y());
                 if (x >= 0 && x < image.cols && y >= 0 && y < image.rows) {
                     image.at<uchar>(y, x) = 0;  // 设置像素值为黑色
                 }
             }
         }
+        cv::imwrite(file_name, image);
+    }
+
+    void SaveImageFromMatchGrid(const cartographer::mapping::Grid2D& input_grid,
+                                const cartographer::mapping::Grid2D& source_grid,
+                                const cartographer::transform::Rigid2d& predict_pose,
+                                const std::string& file_name) {
+        cv::Mat image(6000, 6000, CV_8UC3, cv::Scalar(255, 255, 255));
+
+        cartographer::sensor::PointCloud input = GetPointcloudFromGrid(input_grid);
+        cartographer::sensor::PointCloud source = GetPointcloudFromGrid(source_grid);
+        // 遍历点云数据并绘制到图像上
+        for (const auto& point : input.points()) {
+            int x = static_cast<int>(point.position.x() * 100 + image.cols / 2); // 假设放大了 100 倍，并将原点平移到图像中心
+            int y = static_cast<int>(point.position.y() * 100 + image.rows / 2);
+            cv::circle(image, cv::Point(x, y), 1, cv::Scalar(0, 0, 255), -1); // -1 表示实心圆 红色
+        }
+        for (const auto& point : source.points()) {
+            int x = static_cast<int>(point.position.x() * 100 + image.cols / 2); // 假设放大了 100 倍，并将原点平移到图像中心
+            int y = static_cast<int>(point.position.y() * 100 + image.rows / 2);
+            cv::circle(image, cv::Point(x, y), 1, cv::Scalar(255, 0, 0), -1); // -1 表示实心圆 蓝色
+        }
+
         cv::imwrite(file_name, image);
     }
 
@@ -126,6 +154,34 @@ void SubmapMatcher::MatchCSM(const cartographer::mapping::Grid2D& input_grid,
 
     *pose_estimate = pose_observation;
 }
+
+void SubmapMatcher::MatchFullCSM(const cartographer::mapping::Grid2D& input_grid,
+                                const cartographer::mapping::Grid2D& source_grid,
+                                const cartographer::transform::Rigid2d& predict_pose,
+                                cartographer::transform::Rigid2d* pose_estimate) {
+    cartographer::sensor::PointCloud input_point_cloud = GetPointcloudFromGrid(input_grid);
+
+    fast_correlative_scan_matcher = std::make_shared<FastCorrelativeScanMatcher2D>(
+                        source_grid, fast_correlative_scan_matcher_param);
+    cartographer::transform::Rigid2d initial_ceres_pose = predict_pose;
+    float score = 0.;
+    // fast_correlative_scan_matcher->Match(predict_pose, input_point_cloud, 0.2, &score, &initial_ceres_pose);
+    fast_correlative_scan_matcher->MatchFullSubmap(input_point_cloud, 0.2, &score, &initial_ceres_pose);
+    LOG(INFO) << "predict_pose" << predict_pose;
+    LOG(INFO) << "fast_correlative_scan_matcher" << initial_ceres_pose
+            << "   score: " << score;
+
+    cartographer::transform::Rigid2d pose_observation = predict_pose;
+    ceres::Solver::Summary summary;
+    ceres_scan_matcher_.Match(predict_pose.translation(), initial_ceres_pose,
+                            input_point_cloud,
+                            source_grid, &pose_observation,
+                            &summary);
+    LOG(INFO) << "ceres_scan_matcher" << pose_observation;
+
+    *pose_estimate = pose_observation;
+}
+
 
 void SubmapMatcher::MatchRT(const cartographer::mapping::Grid2D& input_grid,
                             const cartographer::mapping::Grid2D& source_grid,
