@@ -491,7 +491,7 @@ void ComputeAllSubmapsOverlap(
       AddSubmapsToGlobalCoverageGrid2D(submap_data, input_submap_ids,
                                        &coverage_grid);
   const std::vector<SubmapId> submap_ids_to_remove =
-      FindSubmapOverlapped(coverage_grid, all_submap_ids, 4, 0.7);
+      FindSubmapOverlapped(coverage_grid, all_submap_ids, 6, 0.7);
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(

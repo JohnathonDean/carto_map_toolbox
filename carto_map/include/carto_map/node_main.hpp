@@ -24,6 +24,7 @@ class NodeMain {
   ::ros::ServiceServer submap_query_server_;
   ::ros::ServiceServer save_map_server_;
   ::ros::ServiceServer optimize_submap_server_;
+  ::ros::ServiceServer optimize_submap_pose_server_;
   ::ros::ServiceServer remove_submap_server_;
   ::ros::ServiceServer remove_trajectory_server_;
   ::ros::ServiceServer compute_overlap_submap_server_;
@@ -45,6 +46,8 @@ class NodeMain {
                      carto_map::SaveMap::Response& response);
   bool HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
                             carto_map::OptimizeSubmap::Response& response);
+  bool HandleOptimizeSubmapPose(carto_map::OptimizeSubmapPose::Request& request,
+                                carto_map::OptimizeSubmapPose::Response& response);
   bool HandleRemoveSubmap(carto_map::RemoveSubmap::Request& request,
                           carto_map::RemoveSubmap::Response& response);
   bool HandleRemoveTrajectory(carto_map::RemoveTrajectory::Request& request,
@@ -82,6 +85,8 @@ void NodeMain::Init() {
       "/carto_map/save_map", &NodeMain::HandleSaveMap, this);
   optimize_submap_server_ = node_handle_.advertiseService(
       "/carto_map/optimize_submap", &NodeMain::HandleOptimizeSubmap, this);
+  optimize_submap_pose_server_ = node_handle_.advertiseService(
+      "/carto_map/optimize_pose_submap", &NodeMain::HandleOptimizeSubmapPose, this);
   remove_submap_server_ = node_handle_.advertiseService(
       "/carto_map/remove_submap", &NodeMain::HandleRemoveSubmap, this);
   remove_trajectory_server_ = node_handle_.advertiseService(
@@ -140,6 +145,13 @@ bool NodeMain::HandleOptimizeSubmap(
     carto_map::OptimizeSubmap::Response& response) {
   absl::MutexLock lock(&mutex_);
   map_manager_->HandleOptimizeSubmap(request, response);
+  return true;
+}
+
+bool NodeMain::HandleOptimizeSubmapPose(carto_map::OptimizeSubmapPose::Request& request,
+                                        carto_map::OptimizeSubmapPose::Response& response) {
+  absl::MutexLock lock(&mutex_);
+  map_manager_->HandleOptimizeSubmapPose(request, response);
   return true;
 }
 

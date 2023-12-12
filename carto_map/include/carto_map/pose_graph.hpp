@@ -1,7 +1,9 @@
 #include "carto_map/pose_optimize.hpp"
 #include "carto_map/overlap_compute.hpp"
+#include "carto_map/submap_match.hpp"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
+#include <chrono>
 
 #include <cartographer/io/proto_stream.h>
 #include <cartographer/io/proto_stream_deserializer.h>
@@ -49,7 +51,32 @@ class PoseGraphMap {
   std::vector<SerializedData> all_trajectory_data_proto_;
 
  public:
-  PoseGraphMap() : overlap_computer_(0.25) {}
+  PoseGraphMap(){
+    RealTimeCorrelativeScanMatcherParam correlative_scan_matcher_param;
+    correlative_scan_matcher_param.linear_search_window = 0.1;
+    correlative_scan_matcher_param.angular_search_window = 1.57;
+    correlative_scan_matcher_param.translation_delta_cost_weight = 1e-1;
+    correlative_scan_matcher_param.rotation_delta_cost_weight = 1e-1;
+    correlative_scan_matcher_param.angular_search_step_max_range = 20;
+
+    CeresScanMatcherParam ceres_scan_matcher_param;
+    ceres_scan_matcher_param.occupied_space_weight = 1.0;
+    ceres_scan_matcher_param.translation_weight = 10.0;
+    ceres_scan_matcher_param.rotation_weight = 40.0;
+    ceres_scan_matcher_param.use_nonmonotonic_steps = false;
+    ceres_scan_matcher_param.max_num_iterations = 20;
+    ceres_scan_matcher_param.num_threads = 1;
+
+    FastCorrelativeScanMatcherParam fast_correlative_scan_matcher_param;
+    fast_correlative_scan_matcher_param.linear_search_window = 0.1;
+    fast_correlative_scan_matcher_param.angular_search_window = 1.57;
+    fast_correlative_scan_matcher_param.branch_and_bound_depth = 7;
+
+    submap_matcher_ = std::make_shared<SubmapMatcher>(correlative_scan_matcher_param,
+            fast_correlative_scan_matcher_param, ceres_scan_matcher_param);
+
+    overlap_computer_ = std::make_shared<OverlappingSubmapsCompute2D>(0.25);
+  }
   ~PoseGraphMap() {}
 
   PoseGraphMap(const PoseGraphMap&) = delete;
@@ -86,14 +113,21 @@ class PoseGraphMap {
   void RemoveSubmap(const SubmapId& submap_id);
   void RemoveTrajectory(int trajectory_id);
 
+  void DrawSubmap(const SubmapId& submap_id, const std::string& file_name);
+
+  void SubmapPoseOptimization(const SubmapId& input_submap_id, const SubmapId& source_submap_id);
+
   proto::PoseGraph ToProto() const;
   void WriteProto(io::ProtoStreamWriterInterface* const writer);
+
+  void WriteNodePoseStampToFile(const std::string& file_name);
 
  private:
   mutable absl::Mutex mutex_;
   ValueConversionTables conversion_tables_;
 
-  OverlappingSubmapsCompute2D overlap_computer_;
+  std::shared_ptr<OverlappingSubmapsCompute2D> overlap_computer_;
+  std::shared_ptr<SubmapMatcher> submap_matcher_;
 
   int AddTrajectoryForDeserialization(
       const proto::TrajectoryBuilderOptionsWithSensorIds&
@@ -112,11 +146,11 @@ class PoseGraphMap {
 };
 
 void PoseGraphMap::LoadSubmapList(const Json::Value& map_data) {
-  overlap_computer_.LoadSubmapList(map_data);
+  overlap_computer_->LoadSubmapList(map_data);
 }
 
 Json::Value PoseGraphMap::GetSubmapListToJson() {
-  return overlap_computer_.GetSubmapListToJson();
+  return overlap_computer_->GetSubmapListToJson();
 }
 
 void PoseGraphMap::LoadStateFromProto(
@@ -304,6 +338,11 @@ void PoseGraphMap::AddSerializedConstraints(
     const std::vector<Constraint>& constraints) {
   absl::MutexLock locker(&mutex_);
   for (const auto& constraint : constraints) {
+    if(!trajectory_nodes_.Contains(constraint.node_id)) {
+      LOG(INFO) << "AddSerializedConstraints faild in node_id " << constraint.node_id
+                << " in submap_id " << constraint.submap_id
+                << " constraint tag " << constraint.tag;
+    }
     CHECK(trajectory_nodes_.Contains(constraint.node_id));
     CHECK(submap_data_.Contains(constraint.submap_id));
     CHECK(trajectory_nodes_.at(constraint.node_id).constant_data != nullptr);
@@ -616,6 +655,17 @@ void PoseGraphMap::RemoveTrajectory(int trajectory_id) {
   }
 }
 
+void PoseGraphMap::DrawSubmap(const SubmapId& submap_id, const std::string& file_name) {
+  if (!submap_data_.Contains(submap_id)) {
+    LOG(WARNING) << "Submap donot exit" << submap_id;
+    return;
+  }
+  LOG(INFO) << "DrawSubmap " << submap_id
+            << " to file : " << file_name;
+  const Grid2D& tar_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(submap_id).submap)->grid();
+  submap_matcher_->SaveImageFromGrid(tar_grid, file_name);
+}
+
 void PoseGraphMap::WriteProto(io::ProtoStreamWriterInterface* const writer) {
   writer->WriteProto(header_);
   writer->WriteProto(pose_graph_proto_);
@@ -632,14 +682,71 @@ void PoseGraphMap::WriteProto(io::ProtoStreamWriterInterface* const writer) {
 }
 
 void PoseGraphMap::ComputeOverlappedSubmaps() {
+  // WriteNodePoseStampToFile("/home/dean/Pictures/node_poses.txt");
   auto submap_data = GetAllSubmapData();
-  // ComputeAllSubmapsOverlap(submap_data);
   auto start_time = std::chrono::high_resolution_clock::now();
-  overlap_computer_.ComputeAllSubmapsOverlap(submap_data);
+  overlap_computer_->ComputeAllSubmapsOverlap(submap_data);
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
   LOG(INFO) << "ComputeOverlappedSubmaps total cost time:" << duration_time;
 }
+
+void PoseGraphMap::WriteNodePoseStampToFile(const std::string& file_name) {
+  std::ofstream out_file(file_name, std::ios::out | std::ios::binary);
+  for (const auto& node_id_data : GetTrajectoryNodes()) {
+    out_file << std::fixed << std::setprecision(8)
+            << node_id_data.data.time().time_since_epoch().count() / 10000000.0 << " "
+            << node_id_data.data.global_pose.translation().x() << " "
+            << node_id_data.data.global_pose.translation().y() << " "
+            << node_id_data.data.global_pose.translation().z() << " "
+            << node_id_data.data.global_pose.rotation().x() << " "
+            << node_id_data.data.global_pose.rotation().y() << " "
+            << node_id_data.data.global_pose.rotation().z() << " "
+            << node_id_data.data.global_pose.rotation().w() << std::endl;
+    // out_file << "Trajectory_id:(" << node_id_data.id.trajectory_id << "," << node_id_data.id.node_index
+    //           << "),Time:" << node_id_data.data.time()
+    //           << ",Pose:[" << node_id_data.data.global_pose.translation().x() << ","
+    //                        << node_id_data.data.global_pose.translation().y() << ","
+    //                        << node_id_data.data.global_pose.translation().z() << ","
+    //                        << node_id_data.data.global_pose.rotation().w() << ","
+    //                        << node_id_data.data.global_pose.rotation().x() << ","
+    //                        << node_id_data.data.global_pose.rotation().y() << ","
+    //                        << node_id_data.data.global_pose.rotation().z() << "]" << std::endl;
+  }
+  out_file.close();
+}
+
+void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id, const SubmapId& source_submap_id) {
+  transform::Rigid3d global_frame_from_local_frame1 = transform::Embed3D(global_submap_poses_2d_.at(input_submap_id)) *
+      submap_data_.at(input_submap_id).submap->local_pose().inverse();
+  transform::Rigid3d global_frame_from_local_frame2 = transform::Embed3D(global_submap_poses_2d_.at(source_submap_id)) *
+      submap_data_.at(source_submap_id).submap->local_pose().inverse();
+
+  transform::Rigid2d pose_prediction = transform::Project2D(global_frame_from_local_frame1.inverse() * global_frame_from_local_frame2);
+  transform::Rigid2d pose_estimate = pose_prediction;
+
+  const Grid2D& input_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(input_submap_id).submap)->grid();
+  const Grid2D& source_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(source_submap_id).submap)->grid();
+
+  submap_matcher_->MatchRT(input_grid, source_grid, pose_prediction, &pose_estimate);
+
+  LOG(INFO) << "global_frame_from_local_frame1" << global_frame_from_local_frame1;
+  LOG(INFO) << "global_frame_from_local_frame2" << global_frame_from_local_frame2;
+  LOG(INFO) << "pose_prediction" << pose_prediction;
+  LOG(INFO) << "pose_estimate" << pose_estimate;
+
+  {
+    absl::MutexLock locker(&mutex_);
+    global_submap_poses_2d_.at(input_submap_id) = transform::Project2D(
+        global_frame_from_local_frame2 * (transform::Embed3D(pose_estimate)).inverse()
+                                      * submap_data_.at(input_submap_id).submap->local_pose());
+    LOG(INFO) << "OptimizeSubmapPose id:" << input_submap_id
+              << "; global_submap_pose_2d:"
+              << global_submap_poses_2d_.at(input_submap_id);
+  }
+
+}
+
 
 }  // namespace mapping
 }  // namespace cartographer

@@ -4,6 +4,7 @@
 
 #include "carto_map/LoadMap.h"
 #include "carto_map/OptimizeSubmap.h"
+#include "carto_map/OptimizeSubmapPose.h"
 #include "carto_map/RemoveSubmap.h"
 #include "carto_map/RemoveTrajectory.h"
 #include "carto_map/SaveMap.h"
@@ -86,6 +87,8 @@ class MapManager {
       cartographer_ros_msgs::SubmapQuery::Response& response);
   void HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
                             carto_map::OptimizeSubmap::Response& response);
+  void HandleOptimizeSubmapPose(carto_map::OptimizeSubmapPose::Request& request,
+                                carto_map::OptimizeSubmapPose::Response& response);
   void HandleRemoveSubmap(carto_map::RemoveSubmap::Request& request,
                           carto_map::RemoveSubmap::Response& response);
   void HandleRemoveTrajectory(carto_map::RemoveTrajectory::Request& request,
@@ -191,7 +194,7 @@ bool MapManager::SaveMap(const std::string& file_path) {
 bool MapManager::SaveMapInfo(const std::string& file_path) {
   std::string file_name = file_path + "/meta.json";
   std::ofstream out_file(file_name, std::ios::out | std::ios::binary);
-	Json::StyledWriter style_writer;
+	Json::FastWriter style_writer;
   Json::Value map_info_data;
   map_info_data["resolution"] = map_info_.resolution;
   map_info_data["origin_x"] = map_info_.origin_x;
@@ -519,13 +522,22 @@ std::string MapManager::SubmapToProto(
   return "";
 }
 
-void MapManager::HandleOptimizeSubmap(
-    carto_map::OptimizeSubmap::Request& request,
-    carto_map::OptimizeSubmap::Response& response) {
+void MapManager::HandleOptimizeSubmapPose(
+    carto_map::OptimizeSubmapPose::Request& request,
+    carto_map::OptimizeSubmapPose::Response& response) {
   cartographer::mapping::SubmapId submap_id{request.trajectory_id,
                                             request.submap_index};
   std::array<double, 3> input_pose = {request.x, request.y, request.theta};
   pose_graph_->OptimizeSubmapPose(submap_id, input_pose);
+}
+
+void MapManager::HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
+                                      carto_map::OptimizeSubmap::Response& response) {
+  cartographer::mapping::SubmapId input_submap_id{request.trajectory_id,
+                                                  request.submap_index};
+  cartographer::mapping::SubmapId source_submap_id{request.trajectory_id_source,
+                                                   request.submap_index_source};
+  pose_graph_->SubmapPoseOptimization(input_submap_id, source_submap_id);
 }
 
 void MapManager::HandleRemoveSubmap(
@@ -534,6 +546,7 @@ void MapManager::HandleRemoveSubmap(
   cartographer::mapping::SubmapId submap_id{request.trajectory_id,
                                             request.submap_index};
   pose_graph_->RemoveSubmap(submap_id);
+  // pose_graph_->DrawSubmap(submap_id, "/home/dean/Pictures/submap.png");
 }
 
 void MapManager::HandleRemoveTrajectory(

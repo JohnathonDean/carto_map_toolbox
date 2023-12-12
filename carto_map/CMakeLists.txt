@@ -32,6 +32,7 @@ add_service_files(
     LoadMap.srv
     SaveMap.srv
     OptimizeSubmap.srv
+    OptimizeSubmapPose.srv
     RemoveSubmap.srv
     RemoveTrajectory.srv
 )
@@ -68,8 +69,13 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 link_directories(${CMAKE_SOURCE_DIR}/lib)
 
 
-add_executable(${PROJECT_NAME} src/main.cpp)
-target_link_libraries(${PROJECT_NAME}
+add_executable(${PROJECT_NAME}
+  src/main.cpp
+  include/carto_map/scan_matching/real_time_correlative_scan_matcher_2d.cc
+  include/carto_map/scan_matching/ceres_scan_matcher_2d.cc
+  include/carto_map/scan_matching/fast_correlative_scan_matcher_2d.cc
+)
+  target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${boost_LIBRARIES}
   ${CERES_LIBRARIES}
