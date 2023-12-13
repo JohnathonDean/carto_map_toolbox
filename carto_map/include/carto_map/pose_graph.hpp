@@ -52,29 +52,7 @@ class PoseGraphMap {
 
  public:
   PoseGraphMap(){
-    RealTimeCorrelativeScanMatcherParam correlative_scan_matcher_param;
-    correlative_scan_matcher_param.linear_search_window = 0.1;
-    correlative_scan_matcher_param.angular_search_window = 1.57;
-    correlative_scan_matcher_param.translation_delta_cost_weight = 1e-1;
-    correlative_scan_matcher_param.rotation_delta_cost_weight = 1e-1;
-    correlative_scan_matcher_param.angular_search_step_max_range = 20;
-
-    CeresScanMatcherParam ceres_scan_matcher_param;
-    ceres_scan_matcher_param.occupied_space_weight = 1.0;
-    ceres_scan_matcher_param.translation_weight = 10.0;
-    ceres_scan_matcher_param.rotation_weight = 40.0;
-    ceres_scan_matcher_param.use_nonmonotonic_steps = false;
-    ceres_scan_matcher_param.max_num_iterations = 20;
-    ceres_scan_matcher_param.num_threads = 1;
-
-    FastCorrelativeScanMatcherParam fast_correlative_scan_matcher_param;
-    fast_correlative_scan_matcher_param.linear_search_window = 0.1;
-    fast_correlative_scan_matcher_param.angular_search_window = 1.57;
-    fast_correlative_scan_matcher_param.branch_and_bound_depth = 7;
-
-    submap_matcher_ = std::make_shared<SubmapMatcher>(correlative_scan_matcher_param,
-            fast_correlative_scan_matcher_param, ceres_scan_matcher_param);
-
+    submap_matcher_ = std::make_shared<SubmapMatcher>();
     overlap_computer_ = std::make_shared<OverlappingSubmapsCompute2D>(0.25);
   }
   ~PoseGraphMap() {}
@@ -106,6 +84,9 @@ class PoseGraphMap {
   std::vector<Constraint> constraints() const;
 
   void OptimizeSubmapPose(const SubmapId& submap_id,
+                          const std::array<double, 3>& input_pose);
+
+  void ChangeSubmapPose(const SubmapId& submap_id,
                           const std::array<double, 3>& input_pose);
 
   void ComputeOverlappedSubmaps();
@@ -510,6 +491,11 @@ void PoseGraphMap::OptimizeSubmapPose(const SubmapId& submap_id,
   }
 }
 
+void PoseGraphMap::ChangeSubmapPose(const SubmapId& submap_id, const std::array<double, 3>& input_pose) {
+  absl::MutexLock locker(&mutex_);
+  global_submap_poses_2d_.at(submap_id) = transform::Rigid2d({input_pose[0], input_pose[1]},input_pose[2]);
+}
+
 proto::PoseGraph PoseGraphMap::ToProto() const {
   proto::PoseGraph proto;
 
@@ -716,39 +702,52 @@ void PoseGraphMap::WriteNodePoseStampToFile(const std::string& file_name) {
   out_file.close();
 }
 
-void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id, const SubmapId& source_submap_id) {
-  transform::Rigid3d global_frame_from_local_frame1 = transform::Embed3D(global_submap_poses_2d_.at(input_submap_id)) *
+void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id,
+                                          const SubmapId& source_submap_id) {
+  transform::Rigid3d global_frame_from_local_frame1 =
+      transform::Embed3D(global_submap_poses_2d_.at(input_submap_id)) *
       submap_data_.at(input_submap_id).submap->local_pose().inverse();
-  transform::Rigid3d global_frame_from_local_frame2 = transform::Embed3D(global_submap_poses_2d_.at(source_submap_id)) *
+  transform::Rigid3d global_frame_from_local_frame2 =
+      transform::Embed3D(global_submap_poses_2d_.at(source_submap_id)) *
       submap_data_.at(source_submap_id).submap->local_pose().inverse();
 
-  transform::Rigid2d pose_prediction = transform::Project2D(global_frame_from_local_frame1.inverse() * global_frame_from_local_frame2);
+  transform::Rigid2d pose_prediction =
+      transform::Project2D(global_frame_from_local_frame2.inverse() *
+                           global_frame_from_local_frame1);
   transform::Rigid2d pose_estimate = pose_prediction;
 
-  const Grid2D& input_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(input_submap_id).submap)->grid();
-  const Grid2D& source_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(source_submap_id).submap)->grid();
+  const Grid2D& input_grid = *std::static_pointer_cast<const Submap2D>(
+                                  submap_data_.at(input_submap_id).submap)
+                                  ->grid();
+  const Grid2D& source_grid = *std::static_pointer_cast<const Submap2D>(
+                                   submap_data_.at(source_submap_id).submap)
+                                   ->grid();
 
-  submap_matcher_->MatchFullCSM(input_grid, source_grid, pose_prediction, &pose_estimate);
+  submap_matcher_->MatchCSM(input_grid, source_grid, pose_prediction,
+                            &pose_estimate);
 
-  LOG(INFO) << "global_frame_from_local_frame1" << global_frame_from_local_frame1;
-  LOG(INFO) << "global_frame_from_local_frame2" << global_frame_from_local_frame2;
+  LOG(INFO) << "global_frame_from_local_frame1"
+            << global_frame_from_local_frame1;
+  LOG(INFO) << "global_frame_from_local_frame2"
+            << global_frame_from_local_frame2;
   LOG(INFO) << "pose_prediction" << pose_prediction;
   LOG(INFO) << "pose_estimate" << pose_estimate;
 
   {
     absl::MutexLock locker(&mutex_);
     global_submap_poses_2d_.at(input_submap_id) = transform::Project2D(
-        global_frame_from_local_frame2 * (transform::Embed3D(pose_estimate)).inverse()
-                                      * submap_data_.at(input_submap_id).submap->local_pose());
+        global_frame_from_local_frame2 * transform::Embed3D(pose_estimate) *
+        submap_data_.at(input_submap_id).submap->local_pose());
     LOG(INFO) << "OptimizeSubmapPose id:" << input_submap_id
               << "; global_submap_pose_2d:"
               << global_submap_poses_2d_.at(input_submap_id);
   }
 
-  // submap_matcher_->SaveImageFromMatchGrid(input_grid, source_grid, pose_prediction, "/home/dean/Pictures/submap.png");
-
+  // submap_matcher_->SaveImageFromMatchGrid(input_grid, source_grid,
+  //                                         global_frame_from_local_frame1,
+  //                                         global_frame_from_local_frame2,
+  //                                         "/home/dean/Pictures/submap.png");
 }
-
 
 }  // namespace mapping
 }  // namespace cartographer

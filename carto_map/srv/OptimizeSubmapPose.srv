@@ -1,9 +1,9 @@
-
 int32 trajectory_id
 int32 submap_index
 float64 x
 float64 y
 float64 theta
+bool optimize
 ---
 bool result
 

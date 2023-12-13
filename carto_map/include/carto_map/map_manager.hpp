@@ -528,7 +528,11 @@ void MapManager::HandleOptimizeSubmapPose(
   cartographer::mapping::SubmapId submap_id{request.trajectory_id,
                                             request.submap_index};
   std::array<double, 3> input_pose = {request.x, request.y, request.theta};
-  pose_graph_->OptimizeSubmapPose(submap_id, input_pose);
+  if(request.optimize) {
+    pose_graph_->OptimizeSubmapPose(submap_id, input_pose);
+  }else{
+    pose_graph_->ChangeSubmapPose(submap_id, input_pose);
+  }
 }
 
 void MapManager::HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
