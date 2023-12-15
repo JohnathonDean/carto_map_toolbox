@@ -1,0 +1,19 @@
+{
+    "empty_threshold": 205.02000427246094,
+    "id": "2230116144647169",
+    "hidden_submaps":
+    [
+        {
+            "hidden_all": 0,
+            "submap_index":
+            [43,44,63],
+            "trajectory_id": 0
+        }
+    ],
+    "occupied_threshold": 89.25000762939453,
+    "origin_x": 342,
+    "origin_y": 266,
+    "resolution": 0.05,
+    "size_x": 1297,
+    "size_y": 800
+}

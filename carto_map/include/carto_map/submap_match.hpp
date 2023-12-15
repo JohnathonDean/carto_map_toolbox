@@ -3,6 +3,7 @@
 #include "carto_map/scan_matching/ceres_scan_matcher_2d.h"
 #include "carto_map/scan_matching/fast_correlative_scan_matcher_2d.h"
 #include "carto_map/scan_matching/real_time_correlative_scan_matcher_2d.h"
+#include "carto_map/voxel_filter.hpp"
 #include "cartographer/mapping/2d/grid_2d.h"
 #include "cartographer/sensor/point_cloud.h"
 #include "cartographer/transform/transform.h"
@@ -23,8 +24,8 @@ class SubmapMatcher {
     ceres_scan_matcher_options.max_num_iterations = 20;
     ceres_scan_matcher_options.num_threads = 1;
 
-    fast_correlative_scan_matcher_options.linear_search_window = 0.2;
-    fast_correlative_scan_matcher_options.angular_search_window = 2.0944;
+    fast_correlative_scan_matcher_options.linear_search_window = 0.5;
+    fast_correlative_scan_matcher_options.angular_search_window = 0.6;
     fast_correlative_scan_matcher_options.branch_and_bound_depth = 7;
 
     real_time_correlative_scan_matcher_ =
@@ -52,6 +53,11 @@ class SubmapMatcher {
 
   cartographer::sensor::PointCloud GetPointcloudFromGrid(
       const cartographer::mapping::Grid2D& grid);
+
+  cartographer::sensor::PointCloud GetCroppedPointcloud(
+      const cartographer::sensor::PointCloud& input_points,
+      const cartographer::mapping::Grid2D& source_grid,
+      const cartographer::transform::Rigid2d& predict_pose);
 
   void SaveImageFromGrid(const cartographer::mapping::Grid2D& grid,
                          const std::string& file_name) {
@@ -91,9 +97,12 @@ class SubmapMatcher {
     cv::Mat image(6000, 6000, CV_8UC3, cv::Scalar(255, 255, 255));
 
     cartographer::sensor::PointCloud input = GetPointcloudFromGrid(input_grid);
+    cartographer::sensor::PointCloud input1 = GetCroppedPointcloud(
+        input, source_grid,
+        cartographer::transform::Project2D(source_pose.inverse() * input_pose));
     cartographer::sensor::PointCloud input_trans =
         cartographer::sensor::TransformPointCloud(
-            input, (source_pose.inverse() * input_pose).cast<float>());
+            input1, (source_pose.inverse() * input_pose).cast<float>());
     cartographer::sensor::PointCloud source =
         GetPointcloudFromGrid(source_grid);
     // cartographer::sensor::PointCloud source_trans =
@@ -155,6 +164,45 @@ cartographer::sensor::PointCloud SubmapMatcher::GetPointcloudFromGrid(
     }
   }
   return pointcloud_res;
+  // return VoxelFilter(pointcloud_res, 0.05);
+}
+
+cartographer::sensor::PointCloud SubmapMatcher::GetCroppedPointcloud(
+    const cartographer::sensor::PointCloud& input_points,
+    const cartographer::mapping::Grid2D& source_grid,
+    const cartographer::transform::Rigid2d& predict_pose) {
+  Eigen::Array2i tar_offset;
+  cartographer::mapping::CellLimits tar_cell_limits;
+  source_grid.ComputeCroppedLimits(&tar_offset, &tar_cell_limits);
+  if (tar_cell_limits.num_x_cells == 0 || tar_cell_limits.num_y_cells == 0)
+    return input_points;
+  // submap裁剪后的boundbox的边界参数
+  double rect_y_max =
+      source_grid.limits().max().y() -
+      source_grid.limits().resolution() * (tar_offset.x() + 0 + 0.5);
+  double rect_y_min = source_grid.limits().max().y() -
+                      source_grid.limits().resolution() *
+                          (tar_offset.x() + tar_cell_limits.num_x_cells + 0.5);
+  double rect_x_max =
+      source_grid.limits().max().x() -
+      source_grid.limits().resolution() * (tar_offset.y() + 0 + 0.5);
+  double rect_x_min = source_grid.limits().max().x() -
+                      source_grid.limits().resolution() *
+                          (tar_offset.y() + tar_cell_limits.num_y_cells + 0.5);
+  // LOG(INFO) << "Source Grid2D bound_box x:[" << rect_x_min << "," << rect_x_max
+  //           << "] y:[" << rect_y_min << "," << rect_y_max << "]";
+  cartographer::sensor::PointCloud res_points;
+  for (size_t i = 0; i < input_points.size(); i++) {
+    cartographer::sensor::RangefinderPoint point_tran =
+        cartographer::transform::Embed3D(predict_pose).cast<float>() *
+        input_points[i];
+    // LOG(INFO) << "Point:[" << i << "]:(" << point_tran.position.x() << ","<< point_tran.position.y() << ")";
+    if (point_tran.position.x() < rect_x_max && point_tran.position.x() > rect_x_min &&
+        point_tran.position.y() < rect_y_max && point_tran.position.y() > rect_y_min) {
+      res_points.push_back(input_points[i]);
+    }
+  }
+  return res_points;
 }
 
 void SubmapMatcher::MatchCSM(
@@ -162,8 +210,9 @@ void SubmapMatcher::MatchCSM(
     const cartographer::mapping::Grid2D& source_grid,
     const cartographer::transform::Rigid2d& predict_pose,
     cartographer::transform::Rigid2d* pose_estimate) {
-  cartographer::sensor::PointCloud input_point_cloud =
-      GetPointcloudFromGrid(input_grid);
+  cartographer::sensor::PointCloud input_point_cloud = GetPointcloudFromGrid(input_grid);
+  input_point_cloud = VoxelFilter(input_point_cloud, 0.05);
+  input_point_cloud = GetCroppedPointcloud(input_point_cloud, source_grid, predict_pose);
 
   fast_correlative_scan_matcher_ =
       std::make_shared<FastCorrelativeScanMatcher2D>(
