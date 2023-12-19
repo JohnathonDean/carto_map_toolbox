@@ -4,6 +4,7 @@
 #include "carto_map/scan_matching/fast_correlative_scan_matcher_2d.h"
 #include "carto_map/scan_matching/real_time_correlative_scan_matcher_2d.h"
 #include "carto_map/voxel_filter.hpp"
+#include "carto_map/outlier_filter.hpp"
 #include "cartographer/mapping/2d/grid_2d.h"
 #include "cartographer/sensor/point_cloud.h"
 #include "cartographer/transform/transform.h"
@@ -97,6 +98,10 @@ class SubmapMatcher {
     cv::Mat image(6000, 6000, CV_8UC3, cv::Scalar(255, 255, 255));
 
     cartographer::sensor::PointCloud input = GetPointcloudFromGrid(input_grid);
+
+    input = VoxelFilter(input, 0.05);
+    input = StatisticalOutlierFilterPCL(input, 50, 1.0);
+
     cartographer::sensor::PointCloud input1 = GetCroppedPointcloud(
         input, source_grid,
         cartographer::transform::Project2D(source_pose.inverse() * input_pose));
@@ -116,14 +121,14 @@ class SubmapMatcher {
       cv::circle(image, cv::Point(x, y), 1, cv::Scalar(0, 0, 255),
                  -1);  // -1 表示实心圆 红色
     }
-    for (const auto& point : source.points()) {
-      int x = static_cast<int>(
-          point.position.x() * 100 +
-          image.cols / 2);  // 假设放大了 100 倍，并将原点平移到图像中心
-      int y = static_cast<int>(point.position.y() * 100 + image.rows / 2);
-      cv::circle(image, cv::Point(x, y), 1, cv::Scalar(255, 0, 0),
-                 -1);  // -1 表示实心圆 蓝色
-    }
+    // for (const auto& point : source.points()) {
+    //   int x = static_cast<int>(
+    //       point.position.x() * 100 +
+    //       image.cols / 2);  // 假设放大了 100 倍，并将原点平移到图像中心
+    //   int y = static_cast<int>(point.position.y() * 100 + image.rows / 2);
+    //   cv::circle(image, cv::Point(x, y), 1, cv::Scalar(255, 0, 0),
+    //              -1);  // -1 表示实心圆 蓝色
+    // }
 
     cv::imwrite(file_name, image);
   }
@@ -211,7 +216,8 @@ void SubmapMatcher::MatchCSM(
     const cartographer::transform::Rigid2d& predict_pose,
     cartographer::transform::Rigid2d* pose_estimate) {
   cartographer::sensor::PointCloud input_point_cloud = GetPointcloudFromGrid(input_grid);
-  input_point_cloud = VoxelFilter(input_point_cloud, 0.05);
+  input_point_cloud = StatisticalOutlierFilterPCL(input_point_cloud, 60, 1.0);
+  input_point_cloud = VoxelFilter(input_point_cloud, 0.075);
   input_point_cloud = GetCroppedPointcloud(input_point_cloud, source_grid, predict_pose);
 
   fast_correlative_scan_matcher_ =

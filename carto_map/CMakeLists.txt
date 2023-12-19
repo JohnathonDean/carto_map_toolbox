@@ -31,6 +31,7 @@ find_package(Ceres REQUIRED COMPONENTS SuiteSparse)
 find_package(absl REQUIRED)
 find_package(cartographer REQUIRED)
 find_package(OpenCV REQUIRED )
+find_package(PCL  REQUIRED)
 
 add_service_files(
   DIRECTORY srv
@@ -71,6 +72,7 @@ include_directories(
   ${cartographer_INCLUDE_DIRS}
 )
 include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(${PCL_INCLUDE_DIRS})
 
 link_directories(${CMAKE_SOURCE_DIR}/lib)
 
@@ -87,6 +89,7 @@ add_executable(${PROJECT_NAME}
   ${CERES_LIBRARIES}
   cartographer
   ${OpenCV_LIBS}
+  ${PCL_LIBRARIES}
   jsoncpp
 )
 
