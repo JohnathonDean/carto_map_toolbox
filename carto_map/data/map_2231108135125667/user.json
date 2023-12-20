@@ -1,0 +1,67 @@
+{
+    "id": "2231108135125667",
+    "name": "Map_2",
+    "type": "grid",
+    "initial_pose":
+    {
+        "x": 0.0,
+        "y": 0.0,
+        "theta": 0.0,
+        "yw": 0.0
+    },
+    "stations":
+    [],
+    "targets":
+    [],
+    "zones":
+    [
+        {
+            "area": 0.0,
+            "color": "#4DFFE119",
+            "generated": "hand_drawn",
+            "id": "4231117170434215",
+            "isTrack": false,
+            "mode": "normal",
+            "name": "普通区域1",
+            "points":
+            [
+                {
+                    "x": 3.25775,
+                    "y": -18.78335
+                },
+                {
+                    "x": 3.45775,
+                    "y": 18.91665
+                },
+                {
+                    "x": 3.0402284,
+                    "y": -0.46529236
+                }
+            ],
+            "type": "block",
+            "track": false
+        },
+        {
+            "area": 0.0,
+            "color": "#4DF58231",
+            "generated": "hand_drawn",
+            "id": "4231117170513939",
+            "isTrack": false,
+            "mode": "normal",
+            "name": "手绘路径1",
+            "points":
+            [
+                {
+                    "x": 3.2489152,
+                    "y": -15.03439
+                },
+                {
+                    "x": 3.5224092,
+                    "y": 17.055649
+                }
+            ],
+            "type": "path",
+            "track": false
+        }
+    ]
+}

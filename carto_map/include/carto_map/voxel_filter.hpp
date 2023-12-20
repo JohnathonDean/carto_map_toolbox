@@ -1,3 +1,6 @@
+#ifndef VOXEL_FILTER_HPP_
+#define VOXEL_FILTER_HPP_
+
 #include "cartographer/sensor/point_cloud.h"
 #include "cartographer/common/math.h"
 #include "absl/container/flat_hash_map.h"
@@ -58,3 +61,6 @@ cartographer::sensor::PointCloud VoxelFilter(
             << "; output size: " << res.size();
   return res;
 }
+
+#endif  // VOXEL_FILTER_HPP_
+

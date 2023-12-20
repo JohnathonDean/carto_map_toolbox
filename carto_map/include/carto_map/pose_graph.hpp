@@ -1,6 +1,7 @@
 #include "carto_map/pose_optimize.hpp"
 #include "carto_map/overlap_compute.hpp"
 #include "carto_map/submap_match.hpp"
+#include "carto_map/pointcloud_map_match.hpp"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include <chrono>
@@ -53,6 +54,8 @@ class PoseGraphMap {
  public:
   PoseGraphMap(){
     submap_matcher_ = std::make_shared<SubmapMatcher>();
+    pcl_matcher_ = std::make_shared<PointcloudMapMatch>();
+
     overlap_computer_ = std::make_shared<OverlappingSubmapsCompute2D>(0.25);
   }
   ~PoseGraphMap() {}
@@ -109,6 +112,7 @@ class PoseGraphMap {
 
   std::shared_ptr<OverlappingSubmapsCompute2D> overlap_computer_;
   std::shared_ptr<SubmapMatcher> submap_matcher_;
+  std::shared_ptr<PointcloudMapMatch> pcl_matcher_;
 
   int AddTrajectoryForDeserialization(
       const proto::TrajectoryBuilderOptionsWithSensorIds&
@@ -723,30 +727,38 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id,
                                    submap_data_.at(source_submap_id).submap)
                                    ->grid();
 
-  submap_matcher_->MatchCSM(input_grid, source_grid, pose_prediction,
-                            &pose_estimate);
+  pcl_matcher_->MatchICP(input_grid, source_grid, pose_prediction, &pose_estimate);
 
-  LOG(INFO) << "global_frame_from_local_frame1"
-            << global_frame_from_local_frame1;
-  LOG(INFO) << "global_frame_from_local_frame2"
-            << global_frame_from_local_frame2;
-  LOG(INFO) << "pose_prediction" << pose_prediction;
-  LOG(INFO) << "pose_estimate" << pose_estimate;
+  // submap_matcher_->MatchCSM(input_grid, source_grid, pose_prediction,
+  //                           &pose_estimate);
 
-  {
-    absl::MutexLock locker(&mutex_);
-    global_submap_poses_2d_.at(input_submap_id) = transform::Project2D(
-        global_frame_from_local_frame2 * transform::Embed3D(pose_estimate) *
-        submap_data_.at(input_submap_id).submap->local_pose());
-    LOG(INFO) << "OptimizeSubmapPose id:" << input_submap_id
-              << "; global_submap_pose_2d:"
-              << global_submap_poses_2d_.at(input_submap_id);
-  }
+  // LOG(INFO) << "global_frame_from_local_frame1"
+  //           << global_frame_from_local_frame1;
+  // LOG(INFO) << "global_frame_from_local_frame2"
+  //           << global_frame_from_local_frame2;
+  // LOG(INFO) << "pose_prediction" << pose_prediction;
+  // LOG(INFO) << "pose_estimate" << pose_estimate;
+
+  // {
+  //   absl::MutexLock locker(&mutex_);
+  //   global_submap_poses_2d_.at(input_submap_id) = transform::Project2D(
+  //       global_frame_from_local_frame2 * transform::Embed3D(pose_estimate) *
+  //       submap_data_.at(input_submap_id).submap->local_pose());
+  //   LOG(INFO) << "OptimizeSubmapPose id:" << input_submap_id
+  //             << "; global_submap_pose_2d:"
+  //             << global_submap_poses_2d_.at(input_submap_id);
+  // }
 
   // submap_matcher_->SaveImageFromMatchGrid(input_grid, source_grid,
   //                                         global_frame_from_local_frame1,
   //                                         global_frame_from_local_frame2,
   //                                         "/home/dean/Pictures/submap.png");
+
+  // pcl_matcher_->SaveImageFromMatchGrid(input_grid, source_grid,
+  //                                       global_frame_from_local_frame1,
+  //                                       global_frame_from_local_frame2,
+  //                                       "/home/dean/Pictures/submap.png");
+
 }
 
 }  // namespace mapping

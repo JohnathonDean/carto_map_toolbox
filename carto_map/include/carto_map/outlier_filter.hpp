@@ -1,3 +1,6 @@
+#ifndef OUTLIER_FILTER_HPP_
+#define OUTLIER_FILTER_HPP_
+
 #include "cartographer/sensor/point_cloud.h"
 #include <pcl/point_cloud.h>
 #include <pcl/filters/statistical_outlier_removal.h>
@@ -38,7 +41,7 @@ cartographer::sensor::PointCloud StatisticalOutlierFilterPCL(const cartographer:
     return res_points;
 }
 
-
+// 使用传统线性搜索算法耗时太久
 cartographer::sensor::PointCloud StatisticalOutlierFilter(const cartographer::sensor::PointCloud& point_cloud,
     const int mean_k, const double std_mul){
     cartographer::sensor::PointCloud res_points;
@@ -77,4 +80,5 @@ cartographer::sensor::PointCloud StatisticalOutlierFilter(const cartographer::se
     return res_points;
 }
 
+#endif  // OUTLIER_FILTER_HPP_
 

@@ -23,7 +23,7 @@ class SubmapMatcher {
     ceres_scan_matcher_options.rotation_weight = 40.0;
     ceres_scan_matcher_options.use_nonmonotonic_steps = false;
     ceres_scan_matcher_options.max_num_iterations = 20;
-    ceres_scan_matcher_options.num_threads = 1;
+    ceres_scan_matcher_options.num_threads = 3;
 
     fast_correlative_scan_matcher_options.linear_search_window = 0.5;
     fast_correlative_scan_matcher_options.angular_search_window = 0.6;
