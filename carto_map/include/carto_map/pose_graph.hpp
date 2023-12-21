@@ -732,22 +732,22 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id,
   // submap_matcher_->MatchCSM(input_grid, source_grid, pose_prediction,
   //                           &pose_estimate);
 
-  // LOG(INFO) << "global_frame_from_local_frame1"
-  //           << global_frame_from_local_frame1;
-  // LOG(INFO) << "global_frame_from_local_frame2"
-  //           << global_frame_from_local_frame2;
-  // LOG(INFO) << "pose_prediction" << pose_prediction;
-  // LOG(INFO) << "pose_estimate" << pose_estimate;
+  LOG(INFO) << "global_frame_from_local_frame1"
+            << global_frame_from_local_frame1;
+  LOG(INFO) << "global_frame_from_local_frame2"
+            << global_frame_from_local_frame2;
+  LOG(INFO) << "pose_prediction" << pose_prediction;
+  LOG(INFO) << "pose_estimate" << pose_estimate;
 
-  // {
-  //   absl::MutexLock locker(&mutex_);
-  //   global_submap_poses_2d_.at(input_submap_id) = transform::Project2D(
-  //       global_frame_from_local_frame2 * transform::Embed3D(pose_estimate) *
-  //       submap_data_.at(input_submap_id).submap->local_pose());
-  //   LOG(INFO) << "OptimizeSubmapPose id:" << input_submap_id
-  //             << "; global_submap_pose_2d:"
-  //             << global_submap_poses_2d_.at(input_submap_id);
-  // }
+  {
+    absl::MutexLock locker(&mutex_);
+    global_submap_poses_2d_.at(input_submap_id) = transform::Project2D(
+        global_frame_from_local_frame2 * transform::Embed3D(pose_estimate) *
+        submap_data_.at(input_submap_id).submap->local_pose());
+    LOG(INFO) << "OptimizeSubmapPose id:" << input_submap_id
+              << "; global_submap_pose_2d:"
+              << global_submap_poses_2d_.at(input_submap_id);
+  }
 
   // submap_matcher_->SaveImageFromMatchGrid(input_grid, source_grid,
   //                                         global_frame_from_local_frame1,

@@ -1,7 +1,8 @@
 #include <pcl/point_cloud.h>
 #include <pcl/registration/icp.h>
+#include <pcl/registration/gicp.h>
 #include <pcl/visualization/pcl_visualizer.h>
-#include <pcl/console/parse.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -136,18 +137,28 @@ void PointcloudMapMatch::MatchICP(
     const cartographer::mapping::Grid2D& source_grid,
     const cartographer::transform::Rigid2d& predict_pose,
     cartographer::transform::Rigid2d* pose_estimate) {
+  Eigen::Matrix4f predict_matrix = FromRigid2d(predict_pose);
   pcl::PointCloud<pcl::PointXYZ> cloud_input = GetPointcloudFromGrid(input_grid);
   pcl::PointCloud<pcl::PointXYZ> cloud_source = GetPointcloudFromGrid(source_grid);
-  Eigen::Matrix4f predict_matrix = FromRigid2d(predict_pose);
-  // LOG(INFO) << "MatchICP predict_pose:" << predict_pose;
-  // cartographer::transform::Rigid2d trans_pose({0.2,0.3}, 0.3);
-  // cartographer::transform::Rigid2d trans_pose({-1.13986, 0.533425}, -1.82904);
-  // Eigen::Matrix4f predict_matrix = FromRigid2d(trans_pose);
-  pcl::PointCloud<pcl::PointXYZ> cloud_trans2 = cloud_input;
-  pcl::transformPointCloud(cloud_input, cloud_trans2, predict_matrix);
 
-  pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+  pcl::PointCloud<pcl::PointXYZ> cloud_input_filtered = cloud_input;
+  pcl::PointCloud<pcl::PointXYZ> cloud_source_filtered = cloud_source;
+  pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+  sor.setMeanK(100);            //设置领域点的个数
+  sor.setStddevMulThresh(1.0); //设置离群点的阈值
+  sor.setInputCloud(cloud_input.makeShared());    //输入点云
+  sor.filter(cloud_input_filtered); //滤波后的结果
+  sor.setInputCloud(cloud_source.makeShared());    //输入点云
+  sor.filter(cloud_source_filtered); //滤波后的结果
+  cloud_input = cloud_input_filtered;
+  cloud_source = cloud_source_filtered;
+
+  // pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+  pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
   icp.setMaximumIterations(300);
+  icp.setMaxCorrespondenceDistance (0.005);
+  icp.setTransformationEpsilon(1e-10);
+  icp.setEuclideanFitnessEpsilon(1e-9);
   icp.setInputSource(cloud_input.makeShared());
   icp.setInputTarget(cloud_source.makeShared());
 
@@ -161,32 +172,34 @@ void PointcloudMapMatch::MatchICP(
     std::cout << "predict transformation " << std::endl << predict_matrix << std::endl;
     std::cout << "final transformation " << std::endl << trans_matrix << std::endl;
 
-    pcl::PointCloud<pcl::PointXYZ> cloud_trans3 = cloud_input;
-    pcl::transformPointCloud(cloud_input, cloud_trans3, trans_matrix);
-    // 创建可视化对象
-    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer1(new pcl::visualization::PCLVisualizer("Point Cloud Viewer1"));
-    viewer1->setBackgroundColor(1.0, 1.0, 1.0);  // 设置背景颜色
-    // 添加点云数据
-    viewer1->addPointCloud<pcl::PointXYZ>(cloud_source.makeShared(), "cloud1");
-    viewer1->addPointCloud<pcl::PointXYZ>(cloud_trans2.makeShared(), "cloud2");
-    viewer1->addPointCloud<pcl::PointXYZ>(cloud_trans3.makeShared(), "cloud3");
-    // 设置点云颜色 原始点云红色  预测点云绿色  配准点云蓝色
-    viewer1->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "cloud1");
-    viewer1->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 1.0, 0.0, "cloud2");
-    viewer1->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "cloud3");
-    // 设置点云大小
-    viewer1->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud1");
-    viewer1->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud2");
-    viewer1->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud3");
-    // 运行可视化窗口
-    while (!viewer1->wasStopped()) {
-        viewer1->spinOnce(100);
-        usleep(200);
-    }
+    // pcl::PointCloud<pcl::PointXYZ> cloud_trans2 = cloud_input;
+    // pcl::transformPointCloud(cloud_input, cloud_trans2, predict_matrix);
+    // pcl::PointCloud<pcl::PointXYZ> cloud_trans3 = cloud_input;
+    // pcl::transformPointCloud(cloud_input, cloud_trans3, trans_matrix);
+    // // 创建可视化对象
+    // boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
+    // viewer->setBackgroundColor(1.0, 1.0, 1.0);  // 设置背景颜色
+    // // 添加点云数据
+    // viewer->addPointCloud<pcl::PointXYZ>(cloud_source.makeShared(), "cloud1");
+    // viewer->addPointCloud<pcl::PointXYZ>(cloud_trans2.makeShared(), "cloud2");
+    // viewer->addPointCloud<pcl::PointXYZ>(cloud_trans3.makeShared(), "cloud3");
+    // // 设置点云颜色 原始点云红色  预测点云绿色  配准点云蓝色
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "cloud1");
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 1.0, 0.0, "cloud2");
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "cloud3");
+    // // 设置点云大小
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud1");
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud2");
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud3");
+    // // 运行可视化窗口
+    // while (!viewer->wasStopped()) {
+    //     viewer->spinOnce(100);
+    //     usleep(200);
+    // }
 
-    // *pose_estimate = cartographer::transform::Project2D(ToRigid3d(trans_matrix));
+    *pose_estimate = cartographer::transform::Project2D(ToRigid3d(trans_matrix));
   } else {
-    // *pose_estimate = predict_pose;
+    *pose_estimate = predict_pose;
   }
 
 
