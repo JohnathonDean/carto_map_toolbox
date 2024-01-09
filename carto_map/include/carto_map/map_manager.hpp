@@ -2,10 +2,10 @@
 #include <cartographer/io/proto_stream_deserializer.h>
 #include <cartographer/mapping/pose_graph_interface.h>
 
+#include "carto_map/GetSubmapPose.h"
 #include "carto_map/LoadMap.h"
 #include "carto_map/OptimizeSubmap.h"
 #include "carto_map/OptimizeSubmapPose.h"
-#include "carto_map/GetSubmapPose.h"
 #include "carto_map/RemoveSubmap.h"
 #include "carto_map/RemoveTrajectory.h"
 #include "carto_map/SaveMap.h"
@@ -88,8 +88,9 @@ class MapManager {
       cartographer_ros_msgs::SubmapQuery::Response& response);
   void HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
                             carto_map::OptimizeSubmap::Response& response);
-  void HandleOptimizeSubmapPose(carto_map::OptimizeSubmapPose::Request& request,
-                                carto_map::OptimizeSubmapPose::Response& response);
+  void HandleOptimizeSubmapPose(
+      carto_map::OptimizeSubmapPose::Request& request,
+      carto_map::OptimizeSubmapPose::Response& response);
   void HandleRemoveSubmap(carto_map::RemoveSubmap::Request& request,
                           carto_map::RemoveSubmap::Response& response);
   void HandleRemoveTrajectory(carto_map::RemoveTrajectory::Request& request,
@@ -137,20 +138,20 @@ bool MapManager::LoadMap(const std::string& file_name, bool show_disable) {
   Json::Reader reader;
   std::string map_data_path = file_name + "/" + "meta.json";
   std::ifstream input_file(map_data_path, std::ios::binary);
-  if(input_file.is_open()) {
-    if(reader.parse(input_file, map_data)) {
-      map_info_.resolution         = map_data["resolution"].asFloat();
-      map_info_.origin_x           = map_data["origin_x"].asFloat();
-      map_info_.origin_y           = map_data["origin_y"].asFloat();
-      map_info_.col_size           = map_data["size_x"].asUInt();
-      map_info_.row_size           = map_data["size_y"].asUInt();
+  if (input_file.is_open()) {
+    if (reader.parse(input_file, map_data)) {
+      map_info_.resolution = map_data["resolution"].asFloat();
+      map_info_.origin_x = map_data["origin_x"].asFloat();
+      map_info_.origin_y = map_data["origin_y"].asFloat();
+      map_info_.col_size = map_data["size_x"].asUInt();
+      map_info_.row_size = map_data["size_y"].asUInt();
       map_info_.occupied_threshold = map_data["occupied_threshold"].asFloat();
-      map_info_.empty_threshold    = map_data["empty_threshold"].asFloat();
-      map_info_.map_id             = map_data["map_id"].asString();
-      if(map_data.isMember("hidden_submaps")) {
+      map_info_.empty_threshold = map_data["empty_threshold"].asFloat();
+      map_info_.map_id = map_data["map_id"].asString();
+      if (map_data.isMember("hidden_submaps")) {
         for (const auto& it : map_data["hidden_submaps"]) {
           int trajectory_id = it["trajectory_id"].asInt();
-          if(it["hidden_all"].asInt() == 1) {
+          if (it["hidden_all"].asInt() == 1) {
             map_info_.hidden_trajectory_ids.push_back(trajectory_id);
           } else {
             for (auto& iter : it["submap_index"]) {
@@ -162,7 +163,7 @@ bool MapManager::LoadMap(const std::string& file_name, bool show_disable) {
           }
         }
       }
-      if(map_data.isMember("submap_list")) {
+      if (map_data.isMember("submap_list")) {
         pose_graph_->LoadSubmapList(map_data);
         LOG(INFO) << "Load submap list from meta.json";
       }
@@ -197,7 +198,7 @@ bool MapManager::SaveMap(const std::string& file_path) {
 bool MapManager::SaveMapInfo(const std::string& file_path) {
   std::string file_name = file_path + "/meta.json";
   std::ofstream out_file(file_name, std::ios::out | std::ios::binary);
-	Json::FastWriter style_writer;
+  Json::FastWriter style_writer;
   Json::Value map_info_data;
   map_info_data["resolution"] = map_info_.resolution;
   map_info_data["origin_x"] = map_info_.origin_x;
@@ -211,11 +212,14 @@ bool MapManager::SaveMapInfo(const std::string& file_path) {
   int num_trajectory = pose_graph_->num_trajectory();
   for (int i = 0; i < num_trajectory; i++) {
     map_info_data["hidden_submaps"][i]["trajectory_id"] = i;
-    if(std::find(map_info_.hidden_trajectory_ids.begin(), map_info_.hidden_trajectory_ids.end(), i) == map_info_.hidden_trajectory_ids.end()) {
+    if (std::find(map_info_.hidden_trajectory_ids.begin(),
+                  map_info_.hidden_trajectory_ids.end(),
+                  i) == map_info_.hidden_trajectory_ids.end()) {
       map_info_data["hidden_submaps"][i]["hidden_all"] = 0;
       for (auto& iter : map_info_.hidden_submap_ids) {
-        if(iter.trajectory_id == i) {
-          map_info_data["hidden_submaps"][i]["submap_index"].append(iter.submap_index);
+        if (iter.trajectory_id == i) {
+          map_info_data["hidden_submaps"][i]["submap_index"].append(
+              iter.submap_index);
         }
       }
     } else {
@@ -223,7 +227,8 @@ bool MapManager::SaveMapInfo(const std::string& file_path) {
     }
   }
 
-  map_info_data["submap_list"] = (pose_graph_->GetSubmapListToJson())["submap_list"];
+  map_info_data["submap_list"] =
+      (pose_graph_->GetSubmapListToJson())["submap_list"];
 
   out_file << style_writer.write(map_info_data);
   out_file.close();
@@ -531,15 +536,16 @@ void MapManager::HandleOptimizeSubmapPose(
   cartographer::mapping::SubmapId submap_id{request.trajectory_id,
                                             request.submap_index};
   std::array<double, 3> input_pose = {request.x, request.y, request.theta};
-  if(request.optimize) {
+  if (request.optimize) {
     pose_graph_->OptimizeSubmapPose(submap_id, input_pose);
-  }else{
+  } else {
     pose_graph_->ChangeSubmapPose(submap_id, input_pose);
   }
 }
 
-void MapManager::HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
-                                      carto_map::OptimizeSubmap::Response& response) {
+void MapManager::HandleOptimizeSubmap(
+    carto_map::OptimizeSubmap::Request& request,
+    carto_map::OptimizeSubmap::Response& response) {
   cartographer::mapping::SubmapId input_submap_id{request.trajectory_id,
                                                   request.submap_index};
   cartographer::mapping::SubmapId source_submap_id{request.trajectory_id_source,
@@ -563,12 +569,19 @@ void MapManager::HandleRemoveTrajectory(
 }
 
 void MapManager::ComputeOverlappedSubmaps() {
-  pose_graph_->ComputeOverlappedSubmaps();
+  auto res = pose_graph_->ComputeOverlappedSubmaps();
+  for (const auto& id : res) {
+    if (std::find(map_info_.hidden_submap_ids.begin(),
+                  map_info_.hidden_submap_ids.end(),
+                  id) == map_info_.hidden_submap_ids.end()) {
+      map_info_.hidden_submap_ids.push_back(id);
+    }
+  }
 }
 
-std::array<double, 3> MapManager::GetSubmapPoseByID(int trajectory_id, int submap_index) {
+std::array<double, 3> MapManager::GetSubmapPoseByID(int trajectory_id,
+                                                    int submap_index) {
   cartographer::mapping::SubmapId submap_id{trajectory_id, submap_index};
   std::array<double, 3> res = pose_graph_->GetSubmapPose(submap_id);
   return res;
 }
-

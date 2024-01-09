@@ -191,7 +191,7 @@ class OverlappingSubmapsCompute2D {
   std::set<SubmapId> GenerateGlobalCoverageGrid2D(
       GlobalCoverageGrid2D* coverage_grid);
 
-  void ComputeAllSubmapsOverlap(
+  std::vector<SubmapId> ComputeAllSubmapsOverlap(
       const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data);
 
   Json::Value GetSubmapListToJson();
@@ -304,7 +304,7 @@ std::set<SubmapId> OverlappingSubmapsCompute2D::GenerateGlobalCoverageGrid2D(
   return submap_ids;
 }
 
-void OverlappingSubmapsCompute2D::ComputeAllSubmapsOverlap(
+std::vector<SubmapId> OverlappingSubmapsCompute2D::ComputeAllSubmapsOverlap(
     const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data) {
   UpdateSubmapList(submap_data);
 
@@ -358,147 +358,10 @@ void OverlappingSubmapsCompute2D::ComputeAllSubmapsOverlap(
                            end_time - start_time)
                            .count();
   LOG(INFO) << "FindSubmapIds cost time:" << duration_time;
-}
 
-// compare to old method
-// Iterates over every cell in a submap, transforms the center of the cell to
-// the global frame and then adds the submap id and the timestamp of the most
-// recent range data insertion into the global grid.
-std::map<SubmapId, int> AddSubmapsToGlobalCoverageGrid2D(
-    const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data,
-    const std::vector<SubmapId>& input_submaps,
-    GlobalCoverageGrid2D* coverage_grid) {
-  auto start_time = std::chrono::high_resolution_clock::now();
-  LOG(INFO) << "Start AddSubmapsToGlobalCoverageGrid2D";
-
-  std::map<SubmapId, int> coverage_submap_ids;
-  for (const auto& submap_id : input_submaps) {
-    auto start_time_per = std::chrono::high_resolution_clock::now();
-    const Grid2D& grid = *std::static_pointer_cast<const Submap2D>(
-                              submap_data.find(submap_id)->data.submap)
-                              ->grid();
-    Eigen::Array2i offset;
-    CellLimits cell_limits;
-    grid.ComputeCroppedLimits(&offset, &cell_limits);
-    const transform::Rigid3d& global_frame_from_submap_frame =
-        submap_data.find(submap_id)->data.pose;
-    const transform::Rigid3d submap_frame_from_local_frame =
-        submap_data.find(submap_id)->data.submap->local_pose().inverse();
-    const transform::Rigid3d temp_trans =
-        global_frame_from_submap_frame * submap_frame_from_local_frame;
-    int known_cell_count = 0;
-    for (const Eigen::Array2i& xy_index : XYIndexRangeIterator(cell_limits)) {
-      const Eigen::Array2i index = xy_index + offset;
-      if (!grid.IsKnown(index)) continue;
-      known_cell_count++;
-      const transform::Rigid3d center_of_cell_in_local_frame =
-          transform::Rigid3d::Translation(Eigen::Vector3d(
-              grid.limits().max().x() -
-                  grid.limits().resolution() * (index.y() + 0.5),
-              grid.limits().max().y() -
-                  grid.limits().resolution() * (index.x() + 0.5),
-              0));
-
-      const transform::Rigid2d center_of_cell_in_global_frame =
-          transform::Project2D(temp_trans * center_of_cell_in_local_frame);
-      coverage_grid->AddPoint(center_of_cell_in_global_frame.translation(),
-                              submap_id);
-    }
-    coverage_submap_ids[submap_id] = known_cell_count;
-    auto end_time_per = std::chrono::high_resolution_clock::now();
-    auto duration_time_per =
-        std::chrono::duration_cast<std::chrono::microseconds>(end_time_per -
-                                                              start_time_per)
-            .count();
-    LOG(INFO) << "AddSubmaps " << submap_id
-              << "To SubmapCoverageGrid2D cost time:" << duration_time_per;
-  }
-
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                           end_time - start_time)
-                           .count();
-  LOG(INFO) << "AddSubmapsToSubmapCoverageGrid2D total cost time:"
-            << duration_time;
-
-  return coverage_submap_ids;
-}
-
-// Returns IDs of submaps that have less than 'min_covered_cells_count' cells
-// not overlapped by at least 'fresh_submaps_count' submaps.
-std::vector<SubmapId> FindSubmapOverlapped(
-    const GlobalCoverageGrid2D& coverage_grid,
-    std::map<SubmapId, int> submap_cells, uint16 fresh_submaps_count,
-    double max_coverage_rate) {
-  auto start_time = std::chrono::high_resolution_clock::now();
-  LOG(INFO) << "Start FindSubmapOverlapped";
-  std::stringstream ss_out;
-  ss_out << "Find trimming submap ids:";
-
-  std::map<SubmapId, uint16> submap_to_covered_cells_count;
-  for (const auto& cell : coverage_grid.cells()) {
-    std::vector<SubmapId> submaps_per_cell(cell.second);
-    // 对于每个cell删掉最新的fresh_submaps_count个观测，记录每个观测中submap_id的保留数量
-    if (submaps_per_cell.size() > fresh_submaps_count) {
-      std::sort(submaps_per_cell.begin(), submaps_per_cell.end());
-      submaps_per_cell.erase(submaps_per_cell.end() - fresh_submaps_count,
-                             submaps_per_cell.end());
-      for (const SubmapId& submap : submaps_per_cell) {
-        ++submap_to_covered_cells_count[submap];
-      }
-    }
-  }
-  std::vector<SubmapId> submap_ids_to_remove;
-  for (const auto& id_to_cells_count : submap_to_covered_cells_count) {
-    double coverage_rate =
-        id_to_cells_count.second * 1.0 / submap_cells[id_to_cells_count.first];
-    ss_out << "\n"
-           << id_to_cells_count.first << "*" << id_to_cells_count.second << "/"
-           << submap_cells[id_to_cells_count.first] << "[" << coverage_rate
-           << "]";
-    if (coverage_rate > max_coverage_rate) {
-      submap_ids_to_remove.push_back(id_to_cells_count.first);
-      ss_out << "====";
-    }
-  }
-  LOG(INFO) << ss_out.str();
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                           end_time - start_time)
-                           .count();
-  LOG(INFO) << "FindSubmapIdsToTrim cost time:" << duration_time;
-
-  DCHECK(
-      std::is_sorted(submap_ids_to_remove.begin(), submap_ids_to_remove.end()));
   return submap_ids_to_remove;
 }
 
-void ComputeAllSubmapsOverlap(
-    const MapById<SubmapId, PoseGraphInterface::SubmapData>& submap_data) {
-  LOG(INFO) << "Start ComputeAllSubmapsOverlap";
-
-  auto start_time = std::chrono::high_resolution_clock::now();
-
-  std::vector<SubmapId> input_submap_ids;
-  for (const auto& submap : submap_data) {
-    input_submap_ids.push_back(submap.id);
-  }
-
-  Eigen::Vector2d grid_offset(0.0, 0.0);
-  GlobalCoverageGrid2D coverage_grid(grid_offset, 0.05);
-
-  const std::map<SubmapId, int> all_submap_ids =
-      AddSubmapsToGlobalCoverageGrid2D(submap_data, input_submap_ids,
-                                       &coverage_grid);
-  const std::vector<SubmapId> submap_ids_to_remove =
-      FindSubmapOverlapped(coverage_grid, all_submap_ids, 6, 0.7);
-
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                           end_time - start_time)
-                           .count();
-  LOG(INFO) << "ComputeAllSubmapsOverlap cost time:" << duration_time;
-}
 
 }  // namespace mapping
 }  // namespace cartographer

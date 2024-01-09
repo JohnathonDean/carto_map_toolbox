@@ -24,7 +24,7 @@ launch-prefix="gdb -ex run -args"
   <param name="show_disable_submap" value= "false" />
 
   <node name="rviz" pkg="rviz" type="rviz" required="true"
-      args="-d $(find cartographer_ros)/configuration_files/demo_2d.rviz" />
+      args="-d $(find carto_map)/rviz/demo.rviz" />
   <node name="carto_map" pkg="carto_map" type="carto_map" output="screen"  >
   </node>
 </launch>

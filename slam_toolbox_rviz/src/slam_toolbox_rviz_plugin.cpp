@@ -76,8 +76,6 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _label1->setText("Carto Map Tool");
   _label2 = new QLabel(this);
   _label2->setText("Optimize Submap Pose");
-  _label3 = new QLabel(this);
-  _label3->setText("Compute Submap Overlapping");
 
   _label6 = new QLabel(this);
   _label6->setText("X");

@@ -95,7 +95,7 @@ class PoseGraphMap {
 
   std::array<double, 3> GetSubmapPose(const SubmapId& submap_id);
 
-  void ComputeOverlappedSubmaps();
+  std::vector<SubmapId> ComputeOverlappedSubmaps();
 
   void RemoveSubmap(const SubmapId& submap_id);
   void RemoveTrajectory(int trajectory_id);
@@ -693,16 +693,10 @@ void PoseGraphMap::WriteProto(io::ProtoStreamWriterInterface* const writer) {
   }
 }
 
-void PoseGraphMap::ComputeOverlappedSubmaps() {
+std::vector<SubmapId> PoseGraphMap::ComputeOverlappedSubmaps() {
   // WriteNodePoseStampToFile("/home/dean/Pictures/node_poses.txt");
   auto submap_data = GetAllSubmapData();
-  auto start_time = std::chrono::high_resolution_clock::now();
-  overlap_computer_->ComputeAllSubmapsOverlap(submap_data);
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                           end_time - start_time)
-                           .count();
-  LOG(INFO) << "ComputeOverlappedSubmaps total cost time:" << duration_time;
+  return overlap_computer_->ComputeAllSubmapsOverlap(submap_data);
 }
 
 void PoseGraphMap::WriteNodePoseStampToFile(const std::string& file_name) {
