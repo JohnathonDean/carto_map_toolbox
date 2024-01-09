@@ -1,17 +1,18 @@
-#include "carto_map/pose_optimize.hpp"
-#include "carto_map/overlap_compute.hpp"
-#include "carto_map/submap_match.hpp"
-#include "carto_map/pointcloud_map_match.hpp"
-#include "absl/container/flat_hash_map.h"
-#include "absl/synchronization/mutex.h"
-#include <chrono>
-
 #include <cartographer/io/proto_stream.h>
 #include <cartographer/io/proto_stream_deserializer.h>
-#include "cartographer/mapping/proto/trajectory_builder_options.pb.h"
-#include "cartographer/mapping/pose_graph_interface.h"
-#include "cartographer/mapping/pose_graph.h"
+
+#include <chrono>
+
+#include "absl/container/flat_hash_map.h"
+#include "absl/synchronization/mutex.h"
+#include "carto_map/overlap_compute.hpp"
+#include "carto_map/pointcloud_map_match.hpp"
+#include "carto_map/pose_optimize.hpp"
+#include "carto_map/submap_match.hpp"
 #include "cartographer/mapping/2d/submap_2d.h"
+#include "cartographer/mapping/pose_graph.h"
+#include "cartographer/mapping/pose_graph_interface.h"
+#include "cartographer/mapping/proto/trajectory_builder_options.pb.h"
 #include "cartographer/transform/rigid_transform.h"
 #include "cartographer/transform/transform.h"
 
@@ -52,7 +53,7 @@ class PoseGraphMap {
   std::vector<SerializedData> all_trajectory_data_proto_;
 
  public:
-  PoseGraphMap(){
+  PoseGraphMap() {
     submap_matcher_ = std::make_shared<SubmapMatcher>();
     pcl_matcher_ = std::make_shared<PointcloudMapMatch>();
 
@@ -90,7 +91,9 @@ class PoseGraphMap {
                           const std::array<double, 3>& input_pose);
 
   void ChangeSubmapPose(const SubmapId& submap_id,
-                          const std::array<double, 3>& input_pose);
+                        const std::array<double, 3>& input_pose);
+
+  std::array<double, 3> GetSubmapPose(const SubmapId& submap_id);
 
   void ComputeOverlappedSubmaps();
 
@@ -99,7 +102,8 @@ class PoseGraphMap {
 
   void DrawSubmap(const SubmapId& submap_id, const std::string& file_name);
 
-  void SubmapPoseOptimization(const SubmapId& input_submap_id, const SubmapId& source_submap_id);
+  void SubmapPoseOptimization(const SubmapId& input_submap_id,
+                              const SubmapId& source_submap_id);
 
   proto::PoseGraph ToProto() const;
   void WriteProto(io::ProtoStreamWriterInterface* const writer);
@@ -202,6 +206,8 @@ void PoseGraphMap::LoadStateFromProto(
   //                                true);
   // }
 
+  int submap_num = 0;
+
   SerializedData proto;
   while (deserializer.ReadNextSerializedData(&proto)) {
     switch (proto.data_case()) {
@@ -222,6 +228,7 @@ void PoseGraphMap::LoadStateFromProto(
                                  proto.submap().submap_id().submap_index());
         AddSubmapFromProto(submap_poses.at(submap_id), proto.submap());
         submaps_proto_.push_back(proto);
+        submap_num++;
         break;
       }
       case SerializedData::kNode: {
@@ -258,6 +265,8 @@ void PoseGraphMap::LoadStateFromProto(
                      << proto.GetTypeName();
     }
   }
+
+  LOG(WARNING) << "Load pbstream with submaps size: " << submap_num;
 
   AddSerializedConstraints(FromProto(pose_graph_proto.constraint()));
 }
@@ -323,10 +332,10 @@ void PoseGraphMap::AddSerializedConstraints(
     const std::vector<Constraint>& constraints) {
   absl::MutexLock locker(&mutex_);
   for (const auto& constraint : constraints) {
-    if(!trajectory_nodes_.Contains(constraint.node_id)) {
-      LOG(INFO) << "AddSerializedConstraints faild in node_id " << constraint.node_id
-                << " in submap_id " << constraint.submap_id
-                << " constraint tag " << constraint.tag;
+    if (!trajectory_nodes_.Contains(constraint.node_id)) {
+      LOG(INFO) << "AddSerializedConstraints faild in node_id "
+                << constraint.node_id << " in submap_id "
+                << constraint.submap_id << " constraint tag " << constraint.tag;
     }
     CHECK(trajectory_nodes_.Contains(constraint.node_id));
     CHECK(submap_data_.Contains(constraint.submap_id));
@@ -495,9 +504,20 @@ void PoseGraphMap::OptimizeSubmapPose(const SubmapId& submap_id,
   }
 }
 
-void PoseGraphMap::ChangeSubmapPose(const SubmapId& submap_id, const std::array<double, 3>& input_pose) {
+void PoseGraphMap::ChangeSubmapPose(const SubmapId& submap_id,
+                                    const std::array<double, 3>& input_pose) {
   absl::MutexLock locker(&mutex_);
-  global_submap_poses_2d_.at(submap_id) = transform::Rigid2d({input_pose[0], input_pose[1]},input_pose[2]);
+  global_submap_poses_2d_.at(submap_id) =
+      transform::Rigid2d({input_pose[0], input_pose[1]}, input_pose[2]);
+}
+
+std::array<double, 3> PoseGraphMap::GetSubmapPose(const SubmapId& submap_id) {
+  absl::MutexLock locker(&mutex_);
+  auto res_pose = transform::Embed3D(global_submap_poses_2d_.at(submap_id));
+  std::array<double, 3> res = {res_pose.translation().x(),
+                               res_pose.translation().y(),
+                               transform::GetYaw(res_pose.rotation())};
+  return res;
 }
 
 proto::PoseGraph PoseGraphMap::ToProto() const {
@@ -645,14 +665,16 @@ void PoseGraphMap::RemoveTrajectory(int trajectory_id) {
   }
 }
 
-void PoseGraphMap::DrawSubmap(const SubmapId& submap_id, const std::string& file_name) {
+void PoseGraphMap::DrawSubmap(const SubmapId& submap_id,
+                              const std::string& file_name) {
   if (!submap_data_.Contains(submap_id)) {
     LOG(WARNING) << "Submap donot exit" << submap_id;
     return;
   }
-  LOG(INFO) << "DrawSubmap " << submap_id
-            << " to file : " << file_name;
-  const Grid2D& tar_grid = *std::static_pointer_cast<const Submap2D>(submap_data_.at(submap_id).submap)->grid();
+  LOG(INFO) << "DrawSubmap " << submap_id << " to file : " << file_name;
+  const Grid2D& tar_grid = *std::static_pointer_cast<const Submap2D>(
+                                submap_data_.at(submap_id).submap)
+                                ->grid();
   submap_matcher_->SaveImageFromGrid(tar_grid, file_name);
 }
 
@@ -677,7 +699,9 @@ void PoseGraphMap::ComputeOverlappedSubmaps() {
   auto start_time = std::chrono::high_resolution_clock::now();
   overlap_computer_->ComputeAllSubmapsOverlap(submap_data);
   auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(
+                           end_time - start_time)
+                           .count();
   LOG(INFO) << "ComputeOverlappedSubmaps total cost time:" << duration_time;
 }
 
@@ -685,23 +709,31 @@ void PoseGraphMap::WriteNodePoseStampToFile(const std::string& file_name) {
   std::ofstream out_file(file_name, std::ios::out | std::ios::binary);
   for (const auto& node_id_data : GetTrajectoryNodes()) {
     out_file << std::fixed << std::setprecision(8)
-            << node_id_data.data.time().time_since_epoch().count() / 10000000.0 << " "
-            << node_id_data.data.global_pose.translation().x() << " "
-            << node_id_data.data.global_pose.translation().y() << " "
-            << node_id_data.data.global_pose.translation().z() << " "
-            << node_id_data.data.global_pose.rotation().x() << " "
-            << node_id_data.data.global_pose.rotation().y() << " "
-            << node_id_data.data.global_pose.rotation().z() << " "
-            << node_id_data.data.global_pose.rotation().w() << std::endl;
-    // out_file << "Trajectory_id:(" << node_id_data.id.trajectory_id << "," << node_id_data.id.node_index
+             << node_id_data.data.time().time_since_epoch().count() / 10000000.0
+             << " " << node_id_data.data.global_pose.translation().x() << " "
+             << node_id_data.data.global_pose.translation().y() << " "
+             << node_id_data.data.global_pose.translation().z() << " "
+             << node_id_data.data.global_pose.rotation().x() << " "
+             << node_id_data.data.global_pose.rotation().y() << " "
+             << node_id_data.data.global_pose.rotation().z() << " "
+             << node_id_data.data.global_pose.rotation().w() << std::endl;
+    // out_file << "Trajectory_id:(" << node_id_data.id.trajectory_id << "," <<
+    // node_id_data.id.node_index
     //           << "),Time:" << node_id_data.data.time()
-    //           << ",Pose:[" << node_id_data.data.global_pose.translation().x() << ","
-    //                        << node_id_data.data.global_pose.translation().y() << ","
-    //                        << node_id_data.data.global_pose.translation().z() << ","
-    //                        << node_id_data.data.global_pose.rotation().w() << ","
-    //                        << node_id_data.data.global_pose.rotation().x() << ","
-    //                        << node_id_data.data.global_pose.rotation().y() << ","
-    //                        << node_id_data.data.global_pose.rotation().z() << "]" << std::endl;
+    //           << ",Pose:[" << node_id_data.data.global_pose.translation().x()
+    //           << ","
+    //                        << node_id_data.data.global_pose.translation().y()
+    //                        << ","
+    //                        << node_id_data.data.global_pose.translation().z()
+    //                        << ","
+    //                        << node_id_data.data.global_pose.rotation().w() <<
+    //                        ","
+    //                        << node_id_data.data.global_pose.rotation().x() <<
+    //                        ","
+    //                        << node_id_data.data.global_pose.rotation().y() <<
+    //                        ","
+    //                        << node_id_data.data.global_pose.rotation().z() <<
+    //                        "]" << std::endl;
   }
   out_file.close();
 }
@@ -727,7 +759,8 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id,
                                    submap_data_.at(source_submap_id).submap)
                                    ->grid();
 
-  pcl_matcher_->MatchICP(input_grid, source_grid, pose_prediction, &pose_estimate);
+  pcl_matcher_->MatchICP(input_grid, source_grid, pose_prediction,
+                         &pose_estimate);
 
   // submap_matcher_->MatchCSM(input_grid, source_grid, pose_prediction,
   //                           &pose_estimate);
@@ -758,7 +791,6 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id,
   //                                       global_frame_from_local_frame1,
   //                                       global_frame_from_local_frame2,
   //                                       "/home/dean/Pictures/submap.png");
-
 }
 
 }  // namespace mapping

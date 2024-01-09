@@ -40,6 +40,7 @@ add_service_files(
     SaveMap.srv
     OptimizeSubmap.srv
     OptimizeSubmapPose.srv
+    GetSubmapPose.srv
     RemoveSubmap.srv
     RemoveTrajectory.srv
 )

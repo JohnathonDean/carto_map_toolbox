@@ -5,6 +5,7 @@
 #include "carto_map/LoadMap.h"
 #include "carto_map/OptimizeSubmap.h"
 #include "carto_map/OptimizeSubmapPose.h"
+#include "carto_map/GetSubmapPose.h"
 #include "carto_map/RemoveSubmap.h"
 #include "carto_map/RemoveTrajectory.h"
 #include "carto_map/SaveMap.h"
@@ -94,6 +95,8 @@ class MapManager {
   void HandleRemoveTrajectory(carto_map::RemoveTrajectory::Request& request,
                               carto_map::RemoveTrajectory::Response& response);
   void ComputeOverlappedSubmaps();
+
+  std::array<double, 3> GetSubmapPoseByID(int trajectory_id, int submap_index);
 
  private:
   /* data */
@@ -562,3 +565,10 @@ void MapManager::HandleRemoveTrajectory(
 void MapManager::ComputeOverlappedSubmaps() {
   pose_graph_->ComputeOverlappedSubmaps();
 }
+
+std::array<double, 3> MapManager::GetSubmapPoseByID(int trajectory_id, int submap_index) {
+  cartographer::mapping::SubmapId submap_id{trajectory_id, submap_index};
+  std::array<double, 3> res = pose_graph_->GetSubmapPose(submap_id);
+  return res;
+}
+

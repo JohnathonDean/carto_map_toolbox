@@ -15,6 +15,7 @@ class NodeMain {
  private:
   /* data */
   absl::Mutex mutex_;
+  std::string map_file;
 
   ::ros::NodeHandle node_handle_;
   ::ros::Publisher submap_list_publisher_;
@@ -25,6 +26,7 @@ class NodeMain {
   ::ros::ServiceServer save_map_server_;
   ::ros::ServiceServer optimize_submap_server_;
   ::ros::ServiceServer optimize_submap_pose_server_;
+  ::ros::ServiceServer get_submap_pose_server_;
   ::ros::ServiceServer remove_submap_server_;
   ::ros::ServiceServer remove_trajectory_server_;
   ::ros::ServiceServer compute_overlap_submap_server_;
@@ -46,8 +48,11 @@ class NodeMain {
                      carto_map::SaveMap::Response& response);
   bool HandleOptimizeSubmap(carto_map::OptimizeSubmap::Request& request,
                             carto_map::OptimizeSubmap::Response& response);
-  bool HandleOptimizeSubmapPose(carto_map::OptimizeSubmapPose::Request& request,
-                                carto_map::OptimizeSubmapPose::Response& response);
+  bool HandleOptimizeSubmapPose(
+      carto_map::OptimizeSubmapPose::Request& request,
+      carto_map::OptimizeSubmapPose::Response& response);
+  bool HandleGetSubmapPose(carto_map::GetSubmapPose::Request& request,
+                           carto_map::GetSubmapPose::Response& response);
   bool HandleRemoveSubmap(carto_map::RemoveSubmap::Request& request,
                           carto_map::RemoveSubmap::Response& response);
   bool HandleRemoveTrajectory(carto_map::RemoveTrajectory::Request& request,
@@ -62,12 +67,13 @@ NodeMain::~NodeMain() {}
 
 void NodeMain::Init() {
   map_manager_ = absl::make_unique<MapManager>("map");
-  std::string map_file;
   bool show_disable_submap;
-  node_handle_.param("pbstream_file_path", map_file,
-                     std::string("/home/map/grid2d.pbstream"));
+  node_handle_.param("pbstream_file_path", map_file, std::string("/home/map"));
   node_handle_.param("show_disable_submap", show_disable_submap, true);
-  map_manager_->LoadMap(map_file, show_disable_submap);
+  if (!map_manager_->LoadMap(map_file, show_disable_submap)) {
+    ROS_ERROR("Failed to load the map in %s", map_file.c_str());
+    return;
+  }
 
   submap_list_publisher_ =
       node_handle_.advertise<::cartographer_ros_msgs::SubmapList>(
@@ -81,12 +87,16 @@ void NodeMain::Init() {
 
   submap_query_server_ = node_handle_.advertiseService(
       "submap_query", &NodeMain::HandleSubmapQuery, this);
+
   save_map_server_ = node_handle_.advertiseService(
       "/carto_map/save_map", &NodeMain::HandleSaveMap, this);
   optimize_submap_server_ = node_handle_.advertiseService(
       "/carto_map/optimize_submap", &NodeMain::HandleOptimizeSubmap, this);
-  optimize_submap_pose_server_ = node_handle_.advertiseService(
-      "/carto_map/optimize_pose_submap", &NodeMain::HandleOptimizeSubmapPose, this);
+  optimize_submap_pose_server_ =
+      node_handle_.advertiseService("/carto_map/optimize_pose_submap",
+                                    &NodeMain::HandleOptimizeSubmapPose, this);
+  get_submap_pose_server_ = node_handle_.advertiseService(
+      "/carto_map/get_submap_pose", &NodeMain::HandleGetSubmapPose, this);
   remove_submap_server_ = node_handle_.advertiseService(
       "/carto_map/remove_submap", &NodeMain::HandleRemoveSubmap, this);
   remove_trajectory_server_ = node_handle_.advertiseService(
@@ -135,8 +145,13 @@ bool NodeMain::HandleSubmapQuery(
 bool NodeMain::HandleSaveMap(carto_map::SaveMap::Request& request,
                              carto_map::SaveMap::Response& response) {
   absl::MutexLock lock(&mutex_);
-  map_manager_->SaveMap(request.filename);
-  map_manager_->SaveMapInfo(request.filename);
+  if (request.filename == "###") {
+    map_manager_->SaveMap(map_file + "/grid2d.pbstream");
+    map_manager_->SaveMapInfo(map_file + "/meta.json");
+  } else {
+    map_manager_->SaveMap(request.filename);
+    map_manager_->SaveMapInfo(request.filename);
+  }
   return true;
 }
 
@@ -148,8 +163,9 @@ bool NodeMain::HandleOptimizeSubmap(
   return true;
 }
 
-bool NodeMain::HandleOptimizeSubmapPose(carto_map::OptimizeSubmapPose::Request& request,
-                                        carto_map::OptimizeSubmapPose::Response& response) {
+bool NodeMain::HandleOptimizeSubmapPose(
+    carto_map::OptimizeSubmapPose::Request& request,
+    carto_map::OptimizeSubmapPose::Response& response) {
   absl::MutexLock lock(&mutex_);
   map_manager_->HandleOptimizeSubmapPose(request, response);
   return true;
@@ -175,5 +191,17 @@ bool NodeMain::HandleComputeOverlapSubmap(
     std_srvs::Trigger::Response& response) {
   absl::MutexLock lock(&mutex_);
   map_manager_->ComputeOverlappedSubmaps();
+  return true;
+}
+
+bool NodeMain::HandleGetSubmapPose(
+    carto_map::GetSubmapPose::Request& request,
+    carto_map::GetSubmapPose::Response& response) {
+  absl::MutexLock lock(&mutex_);
+  std::array<double, 3> res = map_manager_->GetSubmapPoseByID(
+      request.trajectory_id, request.submap_index);
+  response.x = res[0];
+  response.y = res[1];
+  response.theta = res[2];
   return true;
 }

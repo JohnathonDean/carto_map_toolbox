@@ -1,0 +1,9 @@
+<library path="libcarto_toolbox_rviz">
+    <class name="slam_toolbox::CartoSlamToolboxPlugin"
+           type="slam_toolbox::CartoSlamToolboxPlugin"
+           base_class_type="rviz::Panel">
+        <description>
+            Panel to assist in Mapping and SLAM with the carto slam_toolbox
+        </description>
+    </class>
+</library>

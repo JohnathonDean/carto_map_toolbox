@@ -169,8 +169,8 @@ void PointcloudMapMatch::MatchICP(
 
   if (icp.hasConverged()) {
     Eigen::Matrix4f trans_matrix = icp.getFinalTransformation();
-    std::cout << "predict transformation " << std::endl << predict_matrix << std::endl;
-    std::cout << "final transformation " << std::endl << trans_matrix << std::endl;
+    LOG(INFO) << "predict transformation " << std::endl << predict_matrix << std::endl;
+    LOG(INFO) << "final transformation " << std::endl << trans_matrix << std::endl;
 
     // pcl::PointCloud<pcl::PointXYZ> cloud_trans2 = cloud_input;
     // pcl::transformPointCloud(cloud_input, cloud_trans2, predict_matrix);

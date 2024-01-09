@@ -1,0 +1,27 @@
+<package format="2">
+  <name>carto_toolbox_rviz</name>
+  <description>
+     This package provides a sped up improved slam karto with updated SDK and visualization and modification toolsets
+  </description>
+  <version>1.5.7</version>
+  <maintainer email="1111@gmail.com">11 11</maintainer>
+  <author>11 11</author>
+  <license>LGPL</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>rviz</depend>
+  <depend>carto_map</depend>
+  <depend>qtbase5-dev</depend>
+
+
+  <exec_depend>libqt5-core</exec_depend>
+  <exec_depend>libqt5-gui</exec_depend>
+  <exec_depend>libqt5-opengl</exec_depend>
+  <exec_depend>libqt5-widgets</exec_depend>
+
+  <export>
+    <rviz plugin="${prefix}/rviz_plugins.xml"/>
+  </export>
+
+</package>
