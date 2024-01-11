@@ -228,11 +228,12 @@ void CartoSlamToolboxPlugin::UpdateSubmapPose() {
 
 void CartoSlamToolboxPlugin::OptimizeSubmapPose() {
   carto_map::OptimizeSubmapPose msg;
-  msg.request.trajectory_id = _line4->text().toInt();
-  msg.request.submap_index = _line5->text().toInt();
-  msg.request.x = _line6->text().toDouble();
-  msg.request.y = _line7->text().toDouble();
-  msg.request.theta = _line8->text().toDouble();
+  // 此接口处不修改位姿图里的子图位姿，只对当前位姿图里的所有子图位姿进行优化
+  msg.request.trajectory_id = -1;
+  msg.request.submap_index = -1;
+  msg.request.x = 0.0;
+  msg.request.y = 0.0;
+  msg.request.theta = 0.0;
   msg.request.optimize = 1;
   optimize_submap_pose_.call(msg);
 }
