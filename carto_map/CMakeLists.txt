@@ -18,6 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   visualization_msgs
+  interactive_markers
   geometry_msgs
   message_generation
   tf
@@ -32,6 +33,8 @@ find_package(absl REQUIRED)
 find_package(cartographer REQUIRED)
 find_package(OpenCV REQUIRED )
 find_package(PCL  REQUIRED)
+find_package(Eigen3 REQUIRED)
+
 
 add_service_files(
   DIRECTORY srv
@@ -43,6 +46,7 @@ add_service_files(
     GetSubmapPose.srv
     RemoveSubmap.srv
     RemoveTrajectory.srv
+    SetInteractiveMode.srv
 )
 
 generate_messages(
@@ -71,6 +75,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${CERES_INCLUDE_DIRS}
   ${cartographer_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})

@@ -8,6 +8,7 @@
 #include "carto_map/OptimizeSubmapPose.h"
 #include "carto_map/RemoveSubmap.h"
 #include "carto_map/RemoveTrajectory.h"
+#include "carto_map/SetInteractiveMode.h"
 #include "carto_map/SaveMap.h"
 #include "carto_map/map_writer.hpp"
 #include "carto_map/msg_conversion.hpp"
@@ -18,6 +19,7 @@
 #include "cartographer_ros_msgs/SubmapList.h"
 #include "cartographer_ros_msgs/SubmapQuery.h"
 #include "std_srvs/Trigger.h"
+#include "std_srvs/SetBool.h"
 #include "visualization_msgs/MarkerArray.h"
 
 using ::cartographer::transform::Rigid3d;
@@ -98,6 +100,10 @@ class MapManager {
   void ComputeOverlappedSubmaps();
 
   std::array<double, 3> GetSubmapPoseByID(int trajectory_id, int submap_index);
+  std::map<std::string, geometry_msgs::Pose> GetAllSubmapPoses();
+
+  void ChangeSubmapPoseByID(int trajectory_id, int submap_index, const std::array<double, 3>& input_pose);
+
 
  private:
   /* data */
@@ -585,3 +591,19 @@ std::array<double, 3> MapManager::GetSubmapPoseByID(int trajectory_id,
   std::array<double, 3> res = pose_graph_->GetSubmapPose(submap_id);
   return res;
 }
+
+std::map<std::string, geometry_msgs::Pose> MapManager::GetAllSubmapPoses() {
+  std::map<std::string, geometry_msgs::Pose> res;
+  auto submap_poses = pose_graph_->GetAllSubmapPoses();
+  for (const auto& submap_pose : submap_poses) {
+    std::string id = std::to_string(submap_pose.id.trajectory_id) + "," + std::to_string(submap_pose.id.submap_index);
+    res[id] = ToGeometryMsgPose(submap_pose.data.pose);
+  }
+  return res;
+}
+
+void MapManager::ChangeSubmapPoseByID(int trajectory_id, int submap_index, const std::array<double, 3>& input_pose) {
+  cartographer::mapping::SubmapId submap_id{trajectory_id,submap_index};
+  pose_graph_->ChangeSubmapPose(submap_id, input_pose);
+}
+

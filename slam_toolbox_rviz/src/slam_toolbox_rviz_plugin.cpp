@@ -24,7 +24,7 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
     _thread(NULL)
 {
   ros::NodeHandle nh;
-  bool paused_measure = false, interactive = false;
+  interactive = false;
 
   save_map_ = nh.serviceClient<carto_map::SaveMap>("/carto_map/save_map");
   optimize_submap_ = nh.serviceClient<carto_map::OptimizeSubmap>("/carto_map/optimize_submap");
@@ -33,6 +33,8 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   remove_submap_ = nh.serviceClient<carto_map::RemoveSubmap>("/carto_map/remove_submap");
   remove_trajectory_ = nh.serviceClient<carto_map::RemoveTrajectory>("/carto_map/remove_trajectory");
   compute_overlap_submap_ = nh.serviceClient<std_srvs::Trigger>("/carto_map/compute_overlap_submap");
+  set_interactive_mode_ = nh.serviceClient<carto_map::SetInteractiveMode>("/carto_map/set_interactive_mode");
+  clear_change_ = nh.serviceClient<std_srvs::Trigger>("/carto_map/clear_move_nodes");
 
   _vbox = new QVBoxLayout();
   _hbox1 = new QHBoxLayout();
@@ -42,6 +44,7 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _hbox5 = new QHBoxLayout();
   _hbox6 = new QHBoxLayout();
   _hbox7 = new QHBoxLayout();
+  _hbox8 = new QHBoxLayout();
 
   QFrame* _line = new QFrame();
   _line->setFrameShape(QFrame::HLine);
@@ -71,9 +74,13 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _button8 = new QPushButton(this);
   _button8->setText("Overlapping Compute");
   connect(_button8, SIGNAL(clicked()), this, SLOT(ComputeOverlappedSubmaps()));
+  _button9 = new QPushButton(this);
+  _button9->setText(" Interactive OFF");
+  connect(_button9, SIGNAL(clicked()), this, SLOT(InteractiveCb()));
+  _button10 = new QPushButton(this);
+  _button10->setText("Clear Change");
+  connect(_button10, SIGNAL(clicked()), this, SLOT(ClearChanges()));
 
-  _label1 = new QLabel(this);
-  _label1->setText("Carto Map Tool");
   _label2 = new QLabel(this);
   _label2->setText("Optimize Submap Pose");
 
@@ -106,6 +113,8 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _button6->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   _button7->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   _button8->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  _button9->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  _button10->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
   _line1->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   _line2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -117,6 +126,7 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _line8->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   _line9->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   _line10->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
 
   _hbox1->addWidget(_button1);
   _hbox1->addWidget(_line1);
@@ -146,7 +156,9 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _hbox7->addWidget(_line9);
   _hbox7->addWidget(_line10);
 
-  _vbox->addWidget(_label1);
+  _hbox8->addWidget(_button9);
+  _hbox8->addWidget(_button10);
+
   _vbox->addLayout(_hbox1);
   _vbox->addLayout(_hbox2);
   _vbox->addLayout(_hbox3);
@@ -156,7 +168,7 @@ CartoSlamToolboxPlugin::CartoSlamToolboxPlugin(QWidget* parent):
   _vbox->addLayout(_hbox5);
   _vbox->addLayout(_hbox6);
   _vbox->addLayout(_hbox7);
-
+  _vbox->addLayout(_hbox8);
 
   setLayout(_vbox);
 
@@ -195,6 +207,7 @@ void CartoSlamToolboxPlugin::GetSubmapPose() {
   carto_map::GetSubmapPose msg;
   msg.request.trajectory_id = _line4->text().toInt();
   msg.request.submap_index = _line5->text().toInt();
+  ROS_INFO("GetSubmapPose.");
   if(get_submap_pose_.call(msg)){
     _line6->setText(QString::number(msg.response.x));
     _line7->setText(QString::number(msg.response.y));
@@ -236,6 +249,25 @@ void CartoSlamToolboxPlugin::MatchOptimizeSubmapPose() {
 void CartoSlamToolboxPlugin::ComputeOverlappedSubmaps() {
   std_srvs::Trigger msg;
   compute_overlap_submap_.call(msg);
+}
+
+void CartoSlamToolboxPlugin::InteractiveCb() {
+  carto_map::SetInteractiveMode msg;
+  if (interactive) {
+    msg.request.cmd = 0;
+    interactive = false;
+    _button9->setText(" Interactive OFF");
+  }else{
+    msg.request.cmd = 1;
+    interactive = true;
+    _button9->setText(" Interactive ON");
+  }
+  set_interactive_mode_.call(msg);
+}
+
+void CartoSlamToolboxPlugin::ClearChanges() {
+  std_srvs::Trigger msg;
+  clear_change_.call(msg);
 }
 
 } // end namespace
