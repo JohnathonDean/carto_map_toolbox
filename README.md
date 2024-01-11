@@ -41,7 +41,18 @@ roslaunch carto_map visualize_pbstream.launch pbstream_filename:=/home/dean/map/
 其中变量`pbstream_filename`为加载地图文件夹路径
 > **注意:** 输入参数为**地图文件夹路径**，不是pbstream地图文件的路径  
 
-节点启动后会自动打开Rviz显示从文件中加载到的地图，然后可以通过调用ROS service接口实现对地图的编辑。
+节点启动后会自动打开Rviz显示从文件中加载到的地图，然后可以使用Rviz中的CartoSlamToolboxPlugin对地图进行编辑操作。也可以通过调用ROS service接口实现对地图的编辑。
+
+1. 删除子图数据
+2. 删除轨迹数据
+3. 保存地图
+4. 子图重叠率检测
+5. 子图位姿编辑和优化
+
+
+> **注意:** 在Interactive Mode开启的时候，Submap中发布的Submap Pose Markers遮挡InteractiveMarkers，导致鼠标无法选中和拖动InteractiveMarkers，需要先在Submap中关闭All Submap Pose Markers的显示  
+
+## ROS service接口
 
 1. 删除子图数据
 ```
