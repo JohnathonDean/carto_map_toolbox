@@ -247,18 +247,16 @@ cartographer_ros_msgs::SubmapList MapManager::GetSubmapList() {
   submap_list.header.stamp = ::ros::Time::now();
   submap_list.header.frame_id = map_frame_;
   for (const auto& submap_id_pose : pose_graph_->GetAllSubmapPoses()) {
-    if(!show_disable_submap){
-      if (std::find(map_info_.hidden_trajectory_ids.begin(),
-                    map_info_.hidden_trajectory_ids.end(),
-                    submap_id_pose.id.trajectory_id) !=
-          map_info_.hidden_trajectory_ids.end()) {
-        continue;
-      }
-      if (std::find(map_info_.hidden_submap_ids.begin(),
-                    map_info_.hidden_submap_ids.end(),
-                    submap_id_pose.id) != map_info_.hidden_submap_ids.end()) {
-        continue;
-      }
+    if (std::find(map_info_.hidden_trajectory_ids.begin(),
+                  map_info_.hidden_trajectory_ids.end(),
+                  submap_id_pose.id.trajectory_id) !=
+        map_info_.hidden_trajectory_ids.end()) {
+      continue;
+    }
+    if (std::find(map_info_.hidden_submap_ids.begin(),
+                  map_info_.hidden_submap_ids.end(),
+                  submap_id_pose.id) != map_info_.hidden_submap_ids.end()) {
+      continue;
     }
     cartographer_ros_msgs::SubmapEntry submap_entry;
     submap_entry.is_frozen = false;
