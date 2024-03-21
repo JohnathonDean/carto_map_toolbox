@@ -298,7 +298,6 @@ void PoseGraphMap::AddSubmapFromProto(
     // Immediately show the submap at the 'global_submap_pose'.
     global_submap_poses_2d_.Insert(submap_id, global_submap_pose_2d);
     LOG(INFO) << "AddSubmapFromProto id:" << submap_id
-              << "submap state:" << submap_ptr->submap_msg()
               << "; global_submap_pose_2d:" << global_submap_pose_2d;
   }
 }
