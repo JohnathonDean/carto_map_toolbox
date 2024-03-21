@@ -43,7 +43,8 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
 class Submap2D : public Submap {
  public:
   Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid,
-           ValueConversionTables* conversion_tables);
+           ValueConversionTables* conversion_tables,
+           const std::string& msg = "initial");
   explicit Submap2D(const proto::Submap2D& proto,
                     ValueConversionTables* conversion_tables);
 
@@ -60,10 +61,15 @@ class Submap2D : public Submap {
   void InsertRangeData(const sensor::RangeData& range_data,
                        const RangeDataInserterInterface* range_data_inserter);
   void Finish();
+  void set_submap_msg(const std::string &submap_msg) {
+    submap_msg_ = submap_msg;
+  };
+  std::string submap_msg() const {return submap_msg_;}
 
  private:
   std::unique_ptr<Grid2D> grid_;
   ValueConversionTables* conversion_tables_;
+  std::string submap_msg_;
 };
 
 // The first active submap will be created on the insertion of the first range
