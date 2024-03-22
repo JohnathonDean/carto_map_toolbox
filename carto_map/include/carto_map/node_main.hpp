@@ -31,6 +31,7 @@ class NodeMain {
   ::ros::Publisher submap_list_publisher_;
   ::ros::Publisher trajectory_node_list_publisher_;
   ::ros::Publisher constraint_list_publisher_;
+  ::ros::Publisher landmark_poses_list_publisher_;
 
   ::ros::ServiceServer submap_query_server_;
   ::ros::ServiceServer save_map_server_;
@@ -46,6 +47,7 @@ class NodeMain {
   ::ros::WallTimer submap_list_pub_timer_;
   ::ros::WallTimer trajectory_node_list_pub_timer_;
   ::ros::WallTimer constraint_list_pub_timer_;
+  ::ros::WallTimer landmark_poses_list_pub_timer_;
 
   std::unique_ptr<MapManager> map_manager_;
   std::unique_ptr<interactive_markers::InteractiveMarkerServer>
@@ -54,6 +56,7 @@ class NodeMain {
   void PublishSubmapList(const ::ros::WallTimerEvent& timer_event);
   void PublishTrajectoryNodeList(const ::ros::WallTimerEvent& timer_event);
   void PublishConstraintList(const ::ros::WallTimerEvent& timer_event);
+  void PublishLandmarkPosesList(const ::ros::WallTimerEvent& timer_event);
 
   bool HandleSubmapQuery(
       ::cartographer_ros_msgs::SubmapQuery::Request& request,
@@ -114,6 +117,9 @@ void NodeMain::Init() {
   constraint_list_publisher_ =
       node_handle_.advertise<::visualization_msgs::MarkerArray>(
           "/constraint_list", 1);
+  landmark_poses_list_publisher_ =
+      node_handle_.advertise<::visualization_msgs::MarkerArray>(
+          "/landmark_poses_list", 1);
 
   submap_query_server_ = node_handle_.advertiseService(
       "submap_query", &NodeMain::HandleSubmapQuery, this);
@@ -147,6 +153,8 @@ void NodeMain::Init() {
       ::ros::WallDuration(0.3), &NodeMain::PublishSubmapList, this);
   trajectory_node_list_pub_timer_ = node_handle_.createWallTimer(
       ::ros::WallDuration(30e-3), &NodeMain::PublishTrajectoryNodeList, this);
+  landmark_poses_list_pub_timer_ = node_handle_.createWallTimer(
+      ::ros::WallDuration(30e-3), &NodeMain::PublishLandmarkPosesList, this);
   constraint_list_pub_timer_ = node_handle_.createWallTimer(
       ::ros::WallDuration(0.5), &NodeMain::PublishConstraintList, this);
 }
@@ -169,6 +177,13 @@ void NodeMain::PublishConstraintList(const ::ros::WallTimerEvent& timer_event) {
   if (constraint_list_publisher_.getNumSubscribers() > 0) {
     absl::MutexLock lock(&mutex_);
     constraint_list_publisher_.publish(map_manager_->GetConstraintList());
+  }
+}
+
+void NodeMain::PublishLandmarkPosesList(const ::ros::WallTimerEvent& timer_event) {
+  if (landmark_poses_list_publisher_.getNumSubscribers() > 0) {
+    absl::MutexLock lock(&mutex_);
+    landmark_poses_list_publisher_.publish(map_manager_->GetLandmarkPosesList());
   }
 }
 

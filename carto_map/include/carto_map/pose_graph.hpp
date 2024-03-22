@@ -81,6 +81,7 @@ class PoseGraphMap {
 
   std::map<std::string, PoseGraphInterface::LandmarkNode> GetLandmarkNodes() const;
 
+  std::map<std::string, transform::Rigid3d> GetLandmarkPoses() const;
 
   mapping::proto::AllTrajectoryBuilderOptions GetAllTrajectoryBuilderOptions()
       const;
@@ -450,6 +451,17 @@ MapById<NodeId, TrajectoryNodePose> PoseGraphMap::GetTrajectoryNodePoses()
 std::map<std::string, PoseGraphInterface::LandmarkNode> PoseGraphMap::GetLandmarkNodes() const {
   absl::MutexLock locker(&mutex_);
   return landmark_nodes_;
+}
+
+std::map<std::string, transform::Rigid3d> PoseGraphMap::GetLandmarkPoses() const {
+  std::map<std::string, transform::Rigid3d> landmark_poses;
+  absl::MutexLock locker(&mutex_);
+  for (const auto& landmark : landmark_nodes_) {
+    // Landmark without value has not been optimized yet.
+    if (!landmark.second.global_landmark_pose.has_value()) continue;
+    landmark_poses[landmark.first] = landmark.second.global_landmark_pose.value();
+  }
+  return landmark_poses;
 }
 
 std::vector<Constraint> PoseGraphMap::constraints() const {

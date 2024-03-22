@@ -55,6 +55,31 @@ void PushAndResetLineMarker(visualization_msgs::Marker* marker,
   marker->points.clear();
 }
 
+int GetLandmarkIndex(const std::string& landmark_id, std::unordered_map<std::string, int>* landmark_id_to_index) {
+  auto it = landmark_id_to_index->find(landmark_id);
+  if (it == landmark_id_to_index->end()) {
+    const int new_index = landmark_id_to_index->size();
+    landmark_id_to_index->emplace(landmark_id, new_index);
+    return new_index;
+  }
+  return it->second;
+}
+
+visualization_msgs::Marker CreateLandmarkMarker(int landmark_index, const Rigid3d& landmark_pose, const std::string& frame_id) {
+  visualization_msgs::Marker marker;
+  marker.ns = "Landmarks";
+  marker.id = landmark_index;
+  marker.type = visualization_msgs::Marker::SPHERE;
+  marker.header.stamp = ::ros::Time::now();
+  marker.header.frame_id = frame_id;
+  marker.scale.x = 0.2;
+  marker.scale.y = 0.2;
+  marker.scale.z = 0.2;
+  marker.color = ToMessage(cartographer::io::GetColor(landmark_index));
+  marker.pose = ToGeometryMsgPose(landmark_pose);
+  return marker;
+}
+
 struct MapInfo {
   std::string map_id = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
   float resolution = 0.05;
@@ -84,6 +109,7 @@ class MapManager {
   cartographer_ros_msgs::SubmapList GetSubmapList();
   visualization_msgs::MarkerArray GetTrajectoryNodeList();
   visualization_msgs::MarkerArray GetConstraintList();
+  visualization_msgs::MarkerArray GetLandmarkPosesList();
 
   void HandleSubmapQuery(
       cartographer_ros_msgs::SubmapQuery::Request& request,
@@ -114,6 +140,7 @@ class MapManager {
 
   int trajectory_num_;
   std::unordered_map<int, size_t> trajectory_to_highest_marker_id_;
+  std::unordered_map<std::string, int> landmark_to_index_;
 
   std::string SubmapToProto(
       const cartographer::mapping::SubmapId& submap_id,
@@ -486,6 +513,17 @@ visualization_msgs::MarkerArray MapManager::GetConstraintList() {
   constraint_list.markers.push_back(constraint_inter_diff_trajectory_marker);
   constraint_list.markers.push_back(residual_inter_diff_trajectory_marker);
   return constraint_list;
+}
+
+visualization_msgs::MarkerArray MapManager::GetLandmarkPosesList() {
+  visualization_msgs::MarkerArray landmark_poses_list;
+  const std::map<std::string, Rigid3d> landmark_poses = pose_graph_->GetLandmarkPoses();
+  for (const auto& id_to_pose : landmark_poses) {
+    landmark_poses_list.markers.push_back(CreateLandmarkMarker(
+        GetLandmarkIndex(id_to_pose.first, &landmark_to_index_),
+        id_to_pose.second, map_frame_));
+  }
+  return landmark_poses_list;
 }
 
 void MapManager::HandleSubmapQuery(
