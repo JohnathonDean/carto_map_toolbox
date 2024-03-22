@@ -41,6 +41,7 @@ class PoseGraphMap {
   std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
       all_trajectory_builder_options_;
   std::map<int, PoseGraphInterface::TrajectoryData> trajectory_data_;
+  std::map<std::string, PoseGraphInterface::LandmarkNode> landmark_nodes_;
   std::vector<int> trajectory_id_;
   std::set<int> trajectory_to_delete_;
 
@@ -77,6 +78,9 @@ class PoseGraphMap {
   MapById<NodeId, TrajectoryNode> GetTrajectoryNodes() const;
 
   MapById<NodeId, TrajectoryNodePose> GetTrajectoryNodePoses() const;
+
+  std::map<std::string, PoseGraphInterface::LandmarkNode> GetLandmarkNodes() const;
+
 
   mapping::proto::AllTrajectoryBuilderOptions GetAllTrajectoryBuilderOptions()
       const;
@@ -127,6 +131,8 @@ class PoseGraphMap {
                         const proto::Node& node);
   void AddSerializedConstraints(const std::vector<Constraint>& constraints);
   void SetTrajectoryDataFromProto(const proto::TrajectoryData& data);
+  void SetLandmarkPose(const std::string& landmark_id,
+                       const transform::Rigid3d& global_pose);
 
   MapById<SubmapId, PoseGraphInterface::SubmapData> GetSubmapDataUnderLock()
       const;
@@ -200,11 +206,10 @@ void PoseGraphMap::LoadStateFromProto(
   }
 
   // Set global poses of landmarks.
-  // for (const auto& landmark : pose_graph_proto.landmark_poses()) {
-  //   pose_graph_->SetLandmarkPose(landmark.landmark_id(),
-  //                                transform::ToRigid3(landmark.global_pose()),
-  //                                true);
-  // }
+  for (const auto& landmark : pose_graph_proto.landmark_poses()) {
+    SetLandmarkPose(landmark.landmark_id(),
+                    transform::ToRigid3(landmark.global_pose()));
+  }
 
   int submap_num = 0;
 
@@ -328,6 +333,11 @@ void PoseGraphMap::SetTrajectoryDataFromProto(
   }
 }
 
+void PoseGraphMap::SetLandmarkPose(const std::string& landmark_id,
+                                   const transform::Rigid3d& global_pose) {
+  landmark_nodes_[landmark_id].global_landmark_pose = global_pose;
+}
+
 void PoseGraphMap::AddSerializedConstraints(
     const std::vector<Constraint>& constraints) {
   absl::MutexLock locker(&mutex_);
@@ -435,6 +445,11 @@ MapById<NodeId, TrajectoryNodePose> PoseGraphMap::GetTrajectoryNodePoses()
         TrajectoryNodePose{node_id_data.data.global_pose, constant_pose_data});
   }
   return node_poses;
+}
+
+std::map<std::string, PoseGraphInterface::LandmarkNode> PoseGraphMap::GetLandmarkNodes() const {
+  absl::MutexLock locker(&mutex_);
+  return landmark_nodes_;
 }
 
 std::vector<Constraint> PoseGraphMap::constraints() const {
