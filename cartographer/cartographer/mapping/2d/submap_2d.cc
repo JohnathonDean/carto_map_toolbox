@@ -68,10 +68,10 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
 }
 
 Submap2D::Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid,
-                   ValueConversionTables* conversion_tables)
+                   ValueConversionTables* conversion_tables, const std::string& msg)
     : Submap(transform::Rigid3d::Translation(
           Eigen::Vector3d(origin.x(), origin.y(), 0.))),
-      conversion_tables_(conversion_tables) {
+      conversion_tables_(conversion_tables), submap_msg_(msg) {
   grid_ = std::move(grid);
 }
 
@@ -91,6 +91,9 @@ Submap2D::Submap2D(const proto::Submap2D& proto,
   }
   set_num_range_data(proto.num_range_data());
   set_insertion_finished(proto.finished());
+  submap_msg_ = proto.msg();
+  if(submap_msg_ != "append")
+    submap_msg_ = "initial";
 }
 
 proto::Submap Submap2D::ToProto(const bool include_grid_data) const {
@@ -99,6 +102,7 @@ proto::Submap Submap2D::ToProto(const bool include_grid_data) const {
   *submap_2d->mutable_local_pose() = transform::ToProto(local_pose());
   submap_2d->set_num_range_data(num_range_data());
   submap_2d->set_finished(insertion_finished());
+  submap_2d->set_msg(submap_msg_);
   if (include_grid_data) {
     CHECK(grid_);
     *submap_2d->mutable_grid() = grid_->ToProto();
@@ -111,6 +115,9 @@ void Submap2D::UpdateFromProto(const proto::Submap& proto) {
   const auto& submap_2d = proto.submap_2d();
   set_num_range_data(submap_2d.num_range_data());
   set_insertion_finished(submap_2d.finished());
+  submap_msg_ = submap_2d.msg();
+  if(submap_msg_ != "append")
+    submap_msg_ = "initial";
   if (proto.submap_2d().has_grid()) {
     if (proto.submap_2d().grid().has_probability_grid_2d()) {
       grid_ = absl::make_unique<ProbabilityGrid>(proto.submap_2d().grid(),
