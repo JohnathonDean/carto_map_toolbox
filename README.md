@@ -4,8 +4,11 @@
 carto_map_toolbox是一个基于Cartographer的离线地图编辑工具，可以读取pbstream地图文件并通过ROS话题发布地图数据，在Rviz上可视化显示地图数据。与cartographer_ros中的`visualize_pbstream.launch`不同的是在carto_map中使用了独立的节点加载和显示地图数据，并且提供ROS service接口实现对地图的编辑，目前支持以下地图编辑功能：
 - 子图数据删除
 - 轨迹数据删除
+- 子图位姿编辑
 - 手动回环优化
 - 子图重叠率检测
+
+<img src="carto_map/data/rviz.png.png" />
 
 参考：  
 https://github.com/sqrt81/carto_slam  
