@@ -180,7 +180,7 @@ bool MapManager::LoadMap(const std::string& file_name, bool show_disable) {
       map_info_.row_size = map_data["size_y"].asUInt();
       map_info_.occupied_threshold = map_data["occupied_threshold"].asFloat();
       map_info_.empty_threshold = map_data["empty_threshold"].asFloat();
-      map_info_.map_id = map_data["map_id"].asString();
+      map_info_.map_id = map_data["id"].asString();
       if (map_data.isMember("hidden_submaps")) {
         for (const auto& it : map_data["hidden_submaps"]) {
           int trajectory_id = it["trajectory_id"].asInt();
@@ -240,7 +240,7 @@ bool MapManager::SaveMapInfo(const std::string& file_path) {
   map_info_data["size_y"] = map_info_.row_size;
   map_info_data["occupied_threshold"] = map_info_.occupied_threshold;
   map_info_data["empty_threshold"] = map_info_.empty_threshold;
-  map_info_data["map_id"] = map_info_.map_id;
+  map_info_data["id"] = map_info_.map_id;
 
   int num_trajectory = pose_graph_->num_trajectory();
   for (int i = 0; i < num_trajectory; i++) {
