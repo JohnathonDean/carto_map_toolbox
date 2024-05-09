@@ -199,8 +199,8 @@ bool NodeMain::HandleSaveMap(carto_map::SaveMap::Request& request,
                              carto_map::SaveMap::Response& response) {
   absl::MutexLock lock(&mutex_);
   if (request.filename == "###") {
-    map_manager_->SaveMap(map_file + "/grid2d.pbstream");
-    map_manager_->SaveMapInfo(map_file + "/meta.json");
+    map_manager_->SaveMap(map_file);
+    map_manager_->SaveMapInfo(map_file);
   } else {
     map_manager_->SaveMap(request.filename);
     map_manager_->SaveMapInfo(request.filename);
