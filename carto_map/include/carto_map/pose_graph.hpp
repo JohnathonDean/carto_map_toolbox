@@ -58,7 +58,12 @@ class PoseGraphMap {
     submap_matcher_ = std::make_shared<SubmapMatcher>();
     pcl_matcher_ = std::make_shared<PointcloudMapMatch>();
 
-    overlap_computer_ = std::make_shared<OverlappingSubmapsCompute2D>(0.25);
+    OverlappingSubmapsComputeParam param;
+    param.fresh_submaps_count = 4;
+    param.min_covered_area = 0.95;
+    param.max_loss_area = 0.05;
+    param.low_resolution = 0.1;
+    overlap_computer_ = std::make_shared<OverlappingSubmapsCompute2D>(param);
   }
   ~PoseGraphMap() {}
 

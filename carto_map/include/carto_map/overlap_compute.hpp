@@ -176,10 +176,20 @@ class OccupancyGrid2D {
   transform::Rigid3d global_pose_ = transform::Rigid3d::Identity();
 };
 
+struct OverlappingSubmapsComputeParam{
+  int fresh_submaps_count;
+  double min_covered_area;
+  double max_loss_area;
+  double low_resolution;
+};
+
 class OverlappingSubmapsCompute2D {
  public:
-  OverlappingSubmapsCompute2D(const double map_resolution) {
-    low_resolution_ = map_resolution;
+  OverlappingSubmapsCompute2D(const OverlappingSubmapsComputeParam& param) {
+    fresh_submaps_count_ = param.fresh_submaps_count;
+    min_covered_area_ = param.min_covered_area;
+    max_loss_area_ = param.max_loss_area;
+    low_resolution_ = param.low_resolution;
   }
   ~OverlappingSubmapsCompute2D() {}
 
@@ -199,6 +209,9 @@ class OverlappingSubmapsCompute2D {
  private:
   absl::Mutex submaps_list_mutex_;
 
+  int fresh_submaps_count_;
+  double min_covered_area_;
+  double max_loss_area_;
   double low_resolution_;
 
   std::map<SubmapId, std::shared_ptr<OccupancyGrid2D>> submaps_grid_;
@@ -320,18 +333,23 @@ std::vector<SubmapId> OverlappingSubmapsCompute2D::ComputeAllSubmapsOverlap(
   // out_file << style_writer.write(GetSubmapListToJson());
   // out_file.close();
 
-  int fresh_submaps_count = 4;
   double max_coverage_rate = 0.85;
   auto start_time = std::chrono::high_resolution_clock::now();
   std::stringstream ss_out;
   ss_out << "Find Overlap submap ids:";
   std::map<SubmapId, uint16> submap_to_covered_cells_count;
+  std::map<SubmapId, uint16> submap_to_keep_cells_count;
   for (const auto& cell : coverage_grid.cells()) {
     std::vector<SubmapId> submaps_per_cell(cell.second);
-    // 对于每个cell删掉最新的fresh_submaps_count个观测，记录每个观测中submap_id的保留数量
-    if (submaps_per_cell.size() > fresh_submaps_count) {
+    if (submaps_per_cell.size() <= 3) {
+      // 对于每个cell观测中submap_id的数量少于3个需要保留，防止删除过度
+      for (const SubmapId& submap : submaps_per_cell) {
+        ++submap_to_keep_cells_count[submap];
+      }
+    } else if (submaps_per_cell.size() > fresh_submaps_count_) {
       std::sort(submaps_per_cell.begin(), submaps_per_cell.end());
-      submaps_per_cell.erase(submaps_per_cell.end() - fresh_submaps_count,
+      // 对于每个cell删掉最新的fresh_submaps_count个观测，记录每个观测中submap_id的保留数量
+      submaps_per_cell.erase(submaps_per_cell.end() - fresh_submaps_count_,
                              submaps_per_cell.end());
       for (const SubmapId& submap : submaps_per_cell) {
         ++submap_to_covered_cells_count[submap];
@@ -343,11 +361,14 @@ std::vector<SubmapId> OverlappingSubmapsCompute2D::ComputeAllSubmapsOverlap(
     double coverage_rate =
         id_to_cells_count.second * 1.0 /
         submaps_grid_[id_to_cells_count.first]->known_cell_index_.size();
+    double keep_rate =
+            submap_to_keep_cells_count[id_to_cells_count.first] * 1.0 /
+        submaps_grid_[id_to_cells_count.first]->known_cell_index_.size();
     ss_out << "\n"
            << id_to_cells_count.first << "*" << id_to_cells_count.second << "/"
            << submaps_grid_[id_to_cells_count.first]->known_cell_index_.size()
-           << "[" << coverage_rate << "]";
-    if (coverage_rate > max_coverage_rate) {
+           << "[" << coverage_rate << "],[" << keep_rate << "]";
+    if (coverage_rate > min_covered_area_ && keep_rate < max_loss_area_) {
       submap_ids_to_remove.push_back(id_to_cells_count.first);
       ss_out << "====";
     }
