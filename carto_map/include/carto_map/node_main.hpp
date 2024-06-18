@@ -200,9 +200,11 @@ bool NodeMain::HandleSaveMap(carto_map::SaveMap::Request& request,
   absl::MutexLock lock(&mutex_);
   if (request.filename == "###") {
     map_manager_->SaveMap(map_file);
+    map_manager_->SaveMapPgm(map_file);
     map_manager_->SaveMapInfo(map_file);
   } else {
     map_manager_->SaveMap(request.filename);
+    map_manager_->SaveMapPgm(request.filename);
     map_manager_->SaveMapInfo(request.filename);
   }
   return true;

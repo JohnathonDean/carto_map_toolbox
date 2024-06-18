@@ -8,18 +8,20 @@
 #include "carto_map/OptimizeSubmapPose.h"
 #include "carto_map/RemoveSubmap.h"
 #include "carto_map/RemoveTrajectory.h"
-#include "carto_map/SetInteractiveMode.h"
 #include "carto_map/SaveMap.h"
+#include "carto_map/SetInteractiveMode.h"
 #include "carto_map/map_writer.hpp"
 #include "carto_map/msg_conversion.hpp"
 #include "cartographer/io/color.h"
+#include "cartographer/io/image.h"
+#include "cartographer/io/submap_painter.h"
 #include "cartographer/transform/transform.h"
 #include "cartographer_ros_msgs/StatusCode.h"
 #include "cartographer_ros_msgs/SubmapEntry.h"
 #include "cartographer_ros_msgs/SubmapList.h"
 #include "cartographer_ros_msgs/SubmapQuery.h"
-#include "std_srvs/Trigger.h"
 #include "std_srvs/SetBool.h"
+#include "std_srvs/Trigger.h"
 #include "visualization_msgs/MarkerArray.h"
 
 using ::cartographer::transform::Rigid3d;
@@ -55,7 +57,9 @@ void PushAndResetLineMarker(visualization_msgs::Marker* marker,
   marker->points.clear();
 }
 
-int GetLandmarkIndex(const std::string& landmark_id, std::unordered_map<std::string, int>* landmark_id_to_index) {
+int GetLandmarkIndex(
+    const std::string& landmark_id,
+    std::unordered_map<std::string, int>* landmark_id_to_index) {
   auto it = landmark_id_to_index->find(landmark_id);
   if (it == landmark_id_to_index->end()) {
     const int new_index = landmark_id_to_index->size();
@@ -65,7 +69,9 @@ int GetLandmarkIndex(const std::string& landmark_id, std::unordered_map<std::str
   return it->second;
 }
 
-visualization_msgs::Marker CreateLandmarkMarker(int landmark_index, const Rigid3d& landmark_pose, const std::string& frame_id) {
+visualization_msgs::Marker CreateLandmarkMarker(int landmark_index,
+                                                const Rigid3d& landmark_pose,
+                                                const std::string& frame_id) {
   visualization_msgs::Marker marker;
   marker.ns = "Landmarks";
   marker.id = landmark_index;
@@ -104,6 +110,7 @@ class MapManager {
 
   bool LoadMap(const std::string& file_name, bool show_disable);
   bool SaveMap(const std::string& file_path);
+  bool SaveMapPgm(const std::string& file_path);
   bool SaveMapInfo(const std::string& file_path);
 
   cartographer_ros_msgs::SubmapList GetSubmapList();
@@ -128,8 +135,8 @@ class MapManager {
   std::array<double, 3> GetSubmapPoseByID(int trajectory_id, int submap_index);
   std::map<std::string, geometry_msgs::Pose> GetAllSubmapPoses();
 
-  void ChangeSubmapPoseByID(int trajectory_id, int submap_index, const std::array<double, 3>& input_pose);
-
+  void ChangeSubmapPoseByID(int trajectory_id, int submap_index,
+                            const std::array<double, 3>& input_pose);
 
  private:
   /* data */
@@ -145,6 +152,9 @@ class MapManager {
   std::string SubmapToProto(
       const cartographer::mapping::SubmapId& submap_id,
       cartographer::mapping::proto::SubmapQuery::Response* const response);
+
+  std::unique_ptr<::cartographer::io::SubmapTextures> FetchSubmapTextures(
+      const cartographer::mapping::SubmapId& submap_id);
 };
 
 MapManager::MapManager(const std::string& map_frame) : map_frame_(map_frame) {
@@ -212,11 +222,10 @@ bool MapManager::LoadMap(const std::string& file_name, bool show_disable) {
 }
 
 bool MapManager::SaveMap(const std::string& file_path) {
+  auto start_time = std::chrono::high_resolution_clock::now();
   std::string file_name = file_path + "/grid2d.pbstream";
   cartographer::io::ProtoStreamWriter writer(file_name);
   LOG(INFO) << "Saved pbstream as '" << file_name << "'";
-
-  auto start_time = std::chrono::high_resolution_clock::now();
   cartographer::io::WriteMapProto(*pose_graph_, &writer);
   // pose_graph_->WriteProto(&writer);
   auto end_time = std::chrono::high_resolution_clock::now();
@@ -228,9 +237,109 @@ bool MapManager::SaveMap(const std::string& file_path) {
   return (writer.Close());
 }
 
+bool MapManager::SaveMapPgm(const std::string& file_path) {
+  auto start_time = std::chrono::high_resolution_clock::now();
+  double resolution = map_info_.resolution;
+  std::map<cartographer::mapping::SubmapId, cartographer::io::SubmapSlice>
+      submap_slices;
+
+  for (const auto& submap_id_pose : pose_graph_->GetAllSubmapPoses()) {
+    if (std::find(map_info_.hidden_trajectory_ids.begin(),
+                  map_info_.hidden_trajectory_ids.end(),
+                  submap_id_pose.id.trajectory_id) !=
+        map_info_.hidden_trajectory_ids.end()) {
+      continue;
+    }
+    if (std::find(map_info_.hidden_submap_ids.begin(),
+                  map_info_.hidden_submap_ids.end(),
+                  submap_id_pose.id) != map_info_.hidden_submap_ids.end()) {
+      continue;
+    }
+    auto fetched_textures = FetchSubmapTextures(submap_id_pose.id);
+    if (fetched_textures == nullptr) {
+        continue;
+    }
+    CHECK(!fetched_textures->textures.empty());
+    cartographer::io::SubmapSlice submap_slice;
+    submap_slice.pose = submap_id_pose.data.pose;
+    submap_slice.metadata_version = submap_id_pose.data.version;
+
+    submap_slice.version       = fetched_textures->version;
+    const auto fetched_texture = fetched_textures->textures.begin();
+    submap_slice.width         = fetched_texture->width;
+    submap_slice.height        = fetched_texture->height;
+    submap_slice.slice_pose    = fetched_texture->slice_pose;
+    submap_slice.resolution    = fetched_texture->resolution;
+    submap_slice.cairo_data.clear();
+    submap_slice.surface = ::cartographer::io::DrawTexture(
+        fetched_texture->pixels.intensity,
+        fetched_texture->pixels.alpha,
+        fetched_texture->width,
+        fetched_texture->height,
+        &submap_slice.cairo_data);
+
+    submap_slices.emplace(submap_id_pose.id, std::move(submap_slice));
+    // submap_slices[submap_id_pose.id] = submap_slice;
+  }
+
+  if (submap_slices.size() == 0) return false;
+  auto painted_slices =
+      cartographer::io::PaintSubmapSlices(submap_slices, resolution);
+  cartographer::io::Image image(std::move(painted_slices.surface));
+
+  std::string file_name = file_path + "/grid2d.pgm";
+  LOG(INFO) << "Saved pgm as '" << file_name << "'";
+  cartographer::io::StreamFileWriter pgm_file_writer(file_name);
+  const std::string header = "P5\n# Cartographer map; " +
+                             std::to_string(resolution) + " m/pixel\n" +
+                             std::to_string(image.width()) + " " +
+                             std::to_string(image.height()) + "\n255\n";
+  pgm_file_writer.Write(header.data(), header.size());
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      const char color = image.GetPixel(x, y)[0];
+      pgm_file_writer.Write(&color, 1);
+    }
+  }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration_time = std::chrono::duration_cast<std::chrono::microseconds>(
+                           end_time - start_time)
+                           .count();
+  LOG(INFO) << "WriteMapPgm cost time:" << duration_time;
+
+  return true;
+}
+
+std::unique_ptr<::cartographer::io::SubmapTextures>
+MapManager::FetchSubmapTextures(
+    const cartographer::mapping::SubmapId& submap_id) {
+  cartographer::mapping::proto::SubmapQuery::Response response_proto;
+  const std::string error = SubmapToProto(submap_id, &response_proto);
+  if (!error.empty()) {
+    LOG(ERROR) << error;
+    return nullptr;
+  }
+  auto response = absl::make_unique<cartographer::io::SubmapTextures>();
+  response->version = response_proto.submap_version();
+  // 将response_proto中的地图栅格值存入到response中
+  std::vector<uint8_t> cells = {};
+  for (const auto& texture_proto : response_proto.textures()) {
+    cells.insert(cells.begin(), texture_proto.cells().begin(),
+                 texture_proto.cells().end());
+    const std::string compressed_cells(cells.begin(), cells.end());
+    response->textures.emplace_back(::cartographer::io::SubmapTexture{
+        ::cartographer::io::UnpackTextureData(
+            compressed_cells, texture_proto.width(), texture_proto.height()),
+        texture_proto.width(), texture_proto.height(),
+        texture_proto.resolution(),
+        ::cartographer::transform::ToRigid3(texture_proto.slice_pose())});
+  }
+  return response;
+}
+
 bool MapManager::SaveMapInfo(const std::string& file_path) {
   std::string file_name = file_path + "/meta.json";
-  std::ofstream out_file(file_name, std::ios::out | std::ios::binary);
   Json::FastWriter style_writer;
   Json::Value map_info_data;
   map_info_data["resolution"] = map_info_.resolution;
@@ -263,8 +372,9 @@ bool MapManager::SaveMapInfo(const std::string& file_path) {
   map_info_data["submap_list"] =
       (pose_graph_->GetSubmapListToJson())["submap_list"];
 
-  out_file << style_writer.write(map_info_data);
-  out_file.close();
+  ::cartographer::io::StreamFileWriter json_file_writer(file_name);
+  std::string data = style_writer.write(map_info_data);
+  json_file_writer.Write(data.data(), data.size());
 
   return true;
 }
