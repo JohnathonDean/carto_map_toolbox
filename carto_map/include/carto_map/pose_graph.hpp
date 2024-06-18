@@ -785,6 +785,8 @@ void PoseGraphMap::SubmapPoseOptimization(const SubmapId& input_submap_id,
                                    submap_data_.at(source_submap_id).submap)
                                    ->grid();
 
+  // pcl_matcher_->MatchICPtest(input_grid, source_grid, pose_prediction,
+  //                        &pose_estimate);
   pcl_matcher_->MatchICP(input_grid, source_grid, pose_prediction,
                          &pose_estimate);
 
