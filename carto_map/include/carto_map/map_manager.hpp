@@ -23,8 +23,13 @@
 #include "std_srvs/SetBool.h"
 #include "std_srvs/Trigger.h"
 #include "visualization_msgs/MarkerArray.h"
+#include "cairo/cairo.h"
+
 
 using ::cartographer::transform::Rigid3d;
+
+constexpr float kOccupiedThresh = 0.65;
+constexpr float kFreeThresh = 0.196;
 
 ::std_msgs::ColorRGBA ToMessage(const cartographer::io::FloatColor& color) {
   ::std_msgs::ColorRGBA result;
@@ -285,8 +290,40 @@ bool MapManager::SaveMapPgm(const std::string& file_path) {
   if (submap_slices.size() == 0) return false;
   auto painted_slices =
       cartographer::io::PaintSubmapSlices(submap_slices, resolution);
-  cartographer::io::Image image(std::move(painted_slices.surface));
 
+  const uint32_t* pixel_data = reinterpret_cast<uint32_t*>(
+      cairo_image_surface_get_data(painted_slices.surface.get()));
+  const int width = cairo_image_surface_get_width(painted_slices.surface.get());
+  const int height =
+      cairo_image_surface_get_height(painted_slices.surface.get());
+  LOG(INFO) << "Saved png size " << width << " *  " << height;
+  std::vector<uint8_t> png_data;
+  png_data.reserve(height * width);
+  for (int x = 0; x < height; ++x) {
+    for (int y = 0; y < width; ++y) {
+      const uint32_t packed = pixel_data[x * width + y];
+      const unsigned char color = packed >> 16;
+      const unsigned char observed = packed >> 8;
+      uint8_t value = observed == 0
+                          ? 128
+                          : ::cartographer::common::RoundToInt((double)color);
+      if (value > std::lround(255 * (1 - kFreeThresh))) {
+        value = 255;
+      } else if (value < std::lround(255 * (1 - kOccupiedThresh))) {
+        value = 0;
+      }
+      png_data.push_back(value);
+      CHECK_LE(-1, value);
+      CHECK_GE(255, value);
+    }
+  }
+  cv::Mat png_img(cv::Size{int(width), int(height)}, CV_8UC1, png_data.data());
+
+  std::string png_file_name = file_path + "/grid2d.png";
+  LOG(INFO) << "Saved png as '" << png_file_name << "'";
+  cv::imwrite(png_file_name, png_img);
+
+  cartographer::io::Image image(std::move(painted_slices.surface));
   std::string file_name = file_path + "/grid2d.pgm";
   LOG(INFO) << "Saved pgm as '" << file_name << "'";
   cartographer::io::StreamFileWriter pgm_file_writer(file_name);
